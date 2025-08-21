@@ -3,24 +3,41 @@ import requests, hmac, hashlib, time, os
 
 app = FastAPI()
 
-# Usa variables de entorno en Render para mayor seguridad
+# Parámetros de riesgo
+TP_PERCENT = 0.5
+SL_PERCENT = 0.5
+LEVERAGE = 10
+TRADE_RISK_PERCENT = 2.0  # 2% de tu capital
+
+# API Bybit
 API_KEY = os.getenv("BYBIT_API_KEY")
 API_SECRET = os.getenv("BYBIT_API_SECRET")
-BASE_URL = "https://api-testnet.bybit.com"  # ⚠️ Usa testnet primero
+BASE_URL = "https://api.bybit.com"  # Cuenta real
 
 def sign(params, secret):
     qs = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
     return hmac.new(secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
 
+def get_trade_qty():
+    # Consulta balance disponible
+    r = requests.get(BASE_URL + "/v2/private/wallet/balance", params={
+        "api_key": API_KEY,
+        "timestamp": int(time.time() * 1000)
+    })
+    r.raise_for_status()
+    balance = float(r.json()["result"]["USDT"]["available_balance"])
+    
+    # Calcula 2% del capital × apalancamiento
+    trade_amount = balance * (TRADE_RISK_PERCENT / 100) * LEVERAGE
+    return round(trade_amount, 2)  # ajusta según pares
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
     symbol = data["symbol"]
-    side = data["side"]
-    qty = data["qty"]
-    leverage = data.get("leverage", 10)
-    tp_percent = data.get("tp_percent", 1.0)
-    sl_percent = data.get("sl_percent", 0.5)
+    side = data["side"]  # 'Buy' o 'Sell'
+
+    qty = get_trade_qty()
 
     # Precio actual
     r = requests.get(BASE_URL + "/v2/public/tickers", params={"symbol": symbol})
@@ -28,11 +45,11 @@ async def webhook(request: Request):
 
     # Calcula TP y SL
     if side == "Buy":
-        tp_price = last_price * (1 + tp_percent/100)
-        sl_price = last_price * (1 - sl_percent/100)
+        tp_price = last_price * (1 + TP_PERCENT/100)
+        sl_price = last_price * (1 - SL_PERCENT/100)
     else:
-        tp_price = last_price * (1 - tp_percent/100)
-        sl_price = last_price * (1 + sl_percent/100)
+        tp_price = last_price * (1 - TP_PERCENT/100)
+        sl_price = last_price * (1 + SL_PERCENT/100)
 
     # Orden de entrada
     order = {
