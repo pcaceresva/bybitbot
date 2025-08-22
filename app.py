@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request
 import os
-import requests
 from pybit.unified_trading import HTTP
 import math
 
@@ -19,8 +18,6 @@ session = HTTP(
 
 # Configuración de trading
 RISK_PERCENT = 0.10       # 10% del saldo
-TP_PERCENT = 0.005        # 0.5%
-SL_PERCENT = 0.005        # 0.5%
 LEVERAGE = 10
 
 @app.get("/demo-balance")
@@ -31,41 +28,52 @@ def get_demo_balance():
     except Exception as e:
         return {"error": str(e)}
 
-def execute_trade(symbol: str, side: str):
+def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent: float):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified,
-    ajustando cantidad mínima y decimales según la información disponible.
+    Calcula el qty para una orden de mercado considerando:
+    - saldo disponible
+    - riesgo
+    - apalancamiento
+    - restricciones del token (minOrderQty y qtyStep)
     """
     try:
-        # Intentamos obtener el precio de mercado
-        ticker = session.get_tickers(category="linear", symbol=symbol)
-        last_price = ticker["result"]["list"][0].get("lastPrice")
-        price = float(last_price) if last_price else 1.0  # fallback a 1 si es null
+        info = session.get_instruments_info(category="linear", symbol=symbol)
+        data = info["result"]["list"][0]
+        min_qty = float(data["minOrderQty"])
+        qty_step = float(data["qtyStep"])
+        last_price = float(data["lastPrice"])
 
-        # Información de cantidad y decimales
-        symbol_info = session.get_symbol_info(category="linear", symbol=symbol)
-        qty_step = float(symbol_info["result"]["list"][0].get("qtyStep", 0.001))
-        min_qty = float(symbol_info["result"]["list"][0].get("minOrderQty", qty_step))
+        # Calculamos valor de posición
+        position_value = total_balance * risk_percent * leverage
+        raw_qty = position_value / last_price
 
+        # Ajustamos qty a múltiplos de qty_step
+        qty = math.floor(raw_qty / qty_step) * qty_step
+
+        # Aseguramos que sea >= min_qty
+        if qty < min_qty:
+            qty = min_qty
+
+        return qty, last_price
+
+    except Exception as e:
+        return None, None
+
+def execute_trade(symbol: str, side: str):
+    """
+    Ejecuta un trade usando precio de mercado en Demo Unified.
+    """
+    try:
         # Obtenemos saldo
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
-        # Calculamos tamaño de la posición
-        position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price / qty_step) * qty_step, min_qty)
+        # Calculamos qty y precio de mercado
+        qty, price = calculate_qty(symbol, total_balance, LEVERAGE, RISK_PERCENT)
+        if qty is None:
+            return {"error": "No se pudo calcular qty: token inválido o API"}
 
-        # Calculamos TP y SL
-        if side.upper() == "LONG":
-            tp_price = price * (1 + TP_PERCENT)
-            sl_price = price * (1 - SL_PERCENT)
-            order_side = "Buy"
-        else:
-            tp_price = price * (1 - TP_PERCENT)
-            sl_price = price * (1 + SL_PERCENT)
-            order_side = "Sell"
-
-        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
+        order_side = "Buy" if side.upper() == "LONG" else "Sell"
 
         # Ejecutamos la orden
         order = session.place_order(
@@ -74,10 +82,10 @@ def execute_trade(symbol: str, side: str):
             side=order_side,
             orderType="Market",
             qty=str(qty),
-            leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
+            leverage=LEVERAGE
         )
+
+        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, Precio mercado: {price}")
         return {"status": "success", "order": order}
 
     except Exception as e:
@@ -88,50 +96,32 @@ async def webhook(request: Request):
     """
     Recibe alertas de TradingView en formato JSON:
     {
-        "symbol": "USELESSUSDT",
+        "symbol": "BTCUSDT",
         "side": "LONG" or "SHORT"
     }
     """
-    data = await request.json()
-    symbol = data.get("symbol").replace(".P", "")
-    side = data.get("side")
-
-    if not symbol or not side:
-        return {"error": "Faltan datos en la alerta"}
-
-    return execute_trade(symbol, side)
-
-@app.get("/test-order")
-def test_order():
-    """
-    Orden de prueba rápida a precio de mercado
-    """
-    symbol = "USELESSUSDT"
-    side = "LONG"  # o "SHORT"
-    return execute_trade(symbol, side)
-
-@app.get("/test-symbol")
-def test_symbol(symbol: str = "USELESSUSDT"):
-    """
-    Consulta información del símbolo demo mediante API REST directa
-    """
     try:
-        url = f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
-        resp = requests.get(url)
-        if resp.status_code != 200:
-            return {"error": f"Error al consultar la API: {resp.status_code}"}
-        data = resp.json()
-        # Devolver solo lo relevante
-        info = data.get("result", {}).get("list", [{}])[0]
-        return {
-            "symbol": info.get("symbol"),
-            "lastPrice": info.get("lastPrice"),
-            "minOrderQty": info.get("minOrderQty"),
-            "maxOrderQty": info.get("maxOrderQty"),
-            "qtyStep": info.get("qtyStep"),
-            "priceScale": info.get("priceScale")
-        }
+        data = await request.json()
+        symbol = data.get("symbol").replace(".P", "")
+        side = data.get("side")
+
+        if not symbol or not side:
+            return {"error": "Faltan datos en la alerta"}
+
+        return execute_trade(symbol, side)
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/test-order")
+def test_order(symbol: str = "BTCUSDT", side: str = "LONG"):
+    """
+    Orden de prueba rápida a precio de mercado
+    """
+    return execute_trade(symbol, side)
 
+@app.get("/ping")
+def ping():
+    """
+    Endpoint para mantener vivo el servicio
+    """
+    return {"status": "ok"}
