@@ -61,40 +61,43 @@ def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent
 
 def execute_trade(symbol: str, side: str):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified.
-    Soporta fallback si la API no devuelve lastPrice, minOrderQty o qtyStep.
+    Ejecuta un trade usando Bybit API v5 (demo unified).
+    Maneja fallback si la API no devuelve ciertos campos.
     """
     try:
-        # Intentamos obtener info del símbolo
-        info = session.get_symbol_info(symbol=symbol)
-        last_price = info.get("lastPrice")
-        min_qty = info.get("minOrderQty") or 0.001  # fallback
-        qty_step = info.get("qtyStep") or 0.001     # fallback
+        # Info del símbolo
+        info = session.get_instruments_info(category="linear", symbol=symbol)
+        symbol_info = info["result"]["list"][0]
 
-        # Si lastPrice es None, usamos el ticker
-        if not last_price:
+        # Extraemos valores
+        last_price = float(symbol_info.get("lastPrice", 0) or 0)
+        min_qty = float(symbol_info.get("lotSizeFilter", {}).get("minOrderQty", 0.001))
+        qty_step = float(symbol_info.get("lotSizeFilter", {}).get("qtyStep", 0.001))
+
+        # Si lastPrice está vacío, lo tomamos del ticker
+        if last_price == 0:
             ticker = session.get_tickers(category="linear", symbol=symbol)
             last_price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # Obtenemos saldo
+        # Balance disponible
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
         # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / float(last_price), 4), min_qty)
+        qty = max(round(position_value / last_price, 4), min_qty)
 
-        # Calculamos TP y SL
+        # Definimos TP y SL
         if side.upper() == "LONG":
-            tp_price = float(last_price) * (1 + TP_PERCENT)
-            sl_price = float(last_price) * (1 - SL_PERCENT)
+            tp_price = last_price * (1 + TP_PERCENT)
+            sl_price = last_price * (1 - SL_PERCENT)
             order_side = "Buy"
         else:
-            tp_price = float(last_price) * (1 - TP_PERCENT)
-            sl_price = float(last_price) * (1 + SL_PERCENT)
+            tp_price = last_price * (1 - TP_PERCENT)
+            sl_price = last_price * (1 + SL_PERCENT)
             order_side = "Sell"
 
-        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
+        print(f"Ejecutando → {symbol}, Side={side}, Qty={qty}, TP={tp_price}, SL={sl_price}")
 
         # Ejecutamos la orden
         order = session.place_order(
@@ -112,16 +115,14 @@ def execute_trade(symbol: str, side: str):
     except Exception as e:
         return {"error": f"No se pudo ejecutar trade: {str(e)}"}
 
-
 @app.get("/test-order")
 def test_order():
     """
-    Orden de prueba rápida a precio de mercado
+    Orden de prueba rápida
     """
-    symbol = "BTCUSDT"  # Cambia por USELESSUSDT o el que quieras
+    symbol = "BTCUSDT"  # cámbialo a USELESSUSDT si quieres
     side = "LONG"
     return execute_trade(symbol, side)
-
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -150,4 +151,5 @@ def ping():
     Endpoint para mantener vivo el servicio
     """
     return {"status": "ok"}
+
 
