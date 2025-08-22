@@ -1,79 +1,52 @@
-from fastapi import FastAPI, Request
-from pybit.unified_trading import HTTP
+from fastapi import FastAPI
+import requests
 import time
+import hmac
+import hashlib
+import os
 
 app = FastAPI()
 
-API_KEY = "kAEstgmtlzcLtBUC9D"
-API_SECRET = "Qzn86OWLpLfLdHrGNOq8V6Vcli6oRiP0XJhG"
+# Leemos las variables de entorno
+API_KEY = os.getenv("API_KEY")
+API_SECRET = os.getenv("API_SECRET")
+BASE_URL = "https://api-demo.bybit.com"
 
-# Sesión de demo Unified
-session = HTTP(
-    api_key=API_KEY,
-    api_secret=API_SECRET,
-    demo=True
-)
+def generate_signature(secret, method, path, expires, query_string=""):
+    """
+    Genera la firma HMAC_SHA256 para Bybit v5 Demo Unified
+    """
+    origin = f"{method}{path}{expires}{query_string}"
+    return hmac.new(secret.encode(), origin.encode(), hashlib.sha256).hexdigest()
 
 @app.get("/demo-balance")
 def get_demo_balance():
-    return session.get_wallet_balance(accountType="UNIFIED")
+    path = "/v5/account/wallet-balance"
+    method = "GET"
+    timestamp = int(time.time() * 1000)
+    recv_window = 5000
 
-@app.post("/alert")
-async def alert(request: Request):
-    """
-    Endpoint para recibir alertas de TradingView.
-    Espera JSON con:
-    {
-        "symbol": "BTCUSDT",
-        "signal": "LONG"  # o "SHORT"
+    # Construimos la query string
+    query_string = f"accountType=UNIFIED&recvWindow={recv_window}&timestamp={timestamp}"
+
+    # Generamos la firma
+    signature = generate_signature(API_SECRET, method, path, timestamp, query_string)
+
+    # Headers
+    headers = {
+        "X-BAPI-API-KEY": API_KEY,
+        "X-BAPI-SIGN": signature,
+        "X-BAPI-TIMESTAMP": str(timestamp),
+        "X-BAPI-RECV-WINDOW": str(recv_window)
     }
-    """
-    data = await request.json()
-    symbol = data.get("symbol")
-    signal = data.get("signal")
 
-    # Obtener saldo disponible
-    balance_data = session.get_wallet_balance(accountType="UNIFIED")
-    usdt_balance = float(balance_data['result']['list'][0]['coin'][0]['walletBalance'])
+    # URL completa con query
+    url = f"{BASE_URL}{path}?{query_string}"
+
+    # Llamada GET
+    r = requests.get(url, headers=headers)
     
-    # Usar 10% del saldo
-    qty_usdt = usdt_balance * 0.10
-
-    # Parámetros TP y SL
-    tp_percent = 0.005  # 0.5%
-    sl_percent = 0.005  # 0.5%
-    leverage = 10
-
-    # Precio actual de mercado
-    market_price = float(session.get_mark_price(symbol=symbol)['result']['markPrice'])
-
-    # Calcular TP y SL según LONG o SHORT
-    if signal.upper() == "LONG":
-        side = "Buy"
-        tp_price = market_price * (1 + tp_percent)
-        sl_price = market_price * (1 - sl_percent)
-    elif signal.upper() == "SHORT":
-        side = "Sell"
-        tp_price = market_price * (1 - tp_percent)
-        sl_price = market_price * (1 + sl_percent)
-    else:
-        return {"error": "Signal debe ser LONG o SHORT"}
-
-    # Colocar orden de mercado con apalancamiento
-    order = session.place_order(
-        category="linear",
-        symbol=symbol,
-        side=side,
-        orderType="Market",
-        qty=str(qty_usdt),
-        leverage=leverage,
-        timeInForce="ImmediateOrCancel",
-        takeProfit=str(tp_price),
-        stopLoss=str(sl_price)
-    )
-
-    return {
-        "signal": signal,
-        "symbol": symbol,
-        "order": order
-    }
+    try:
+        return r.json()
+    except Exception as e:
+        return {"error": "No se pudo decodificar JSON", "raw_text": r.text, "exception": str(e)}
