@@ -45,7 +45,7 @@ def execute_trade(symbol: str, side: str):
 
         # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = round(position_value / price, 6)  # Ajustar decimales según el par
+        qty = max(round(position_value / price, 3), 0.001)  # Ajustar decimales según el par
 
         # Calculamos TP y SL
         if side.upper() == "LONG":
@@ -100,3 +100,4 @@ def test_order():
     symbol = "BTCUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
