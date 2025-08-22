@@ -19,6 +19,9 @@ session = HTTP(
 # Configuración de trading
 RISK_PERCENT = 0.10       # 10% del saldo
 LEVERAGE = 10
+TP_PERCENT = 0.005        # 0.5% fijo
+SL_PERCENT = 0.005        # 0.5% fijo
+
 
 @app.get("/demo-balance")
 def get_demo_balance():
@@ -27,6 +30,7 @@ def get_demo_balance():
         return balance
     except Exception as e:
         return {"error": str(e)}
+
 
 def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent: float):
     """
@@ -59,6 +63,7 @@ def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent
     except Exception as e:
         return None, None
 
+
 def execute_trade(symbol: str, side: str):
     """
     Ejecuta un trade usando Bybit API v5 (demo unified).
@@ -87,7 +92,7 @@ def execute_trade(symbol: str, side: str):
         position_value = total_balance * RISK_PERCENT * LEVERAGE
         qty = max(round(position_value / last_price, 4), min_qty)
 
-        # Definimos TP y SL
+        # Definimos TP y SL con 0.5% fijos
         if side.upper() == "LONG":
             tp_price = last_price * (1 + TP_PERCENT)
             sl_price = last_price * (1 - SL_PERCENT)
@@ -115,6 +120,7 @@ def execute_trade(symbol: str, side: str):
     except Exception as e:
         return {"error": f"No se pudo ejecutar trade: {str(e)}"}
 
+
 @app.get("/test-order")
 def test_order():
     """
@@ -123,6 +129,7 @@ def test_order():
     symbol = "BTCUSDT"  # cámbialo a USELESSUSDT si quieres
     side = "LONG"
     return execute_trade(symbol, side)
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -144,12 +151,11 @@ async def webhook(request: Request):
         return execute_trade(symbol, side)
     except Exception as e:
         return {"error": str(e)}
-        
+
+
 @app.get("/ping")
 def ping():
     """
     Endpoint para mantener vivo el servicio
     """
     return {"status": "ok"}
-
-
