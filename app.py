@@ -1,161 +1,87 @@
 from fastapi import FastAPI, Request
-import os
 from pybit.unified_trading import HTTP
-import math
+from decimal import Decimal
+import os
 
 app = FastAPI()
 
-# Variables de entorno
-API_KEY = os.getenv("API_KEY")
-API_SECRET = os.getenv("API_SECRET")
+# Credenciales desde variables de entorno
+API_KEY = os.getenv("BYBIT_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET")
 
-# Inicializamos sesión de Unified Demo
+# Cliente Bybit Demo (cámbialo a live si usas producción)
 session = HTTP(
+    testnet=True,
     api_key=API_KEY,
-    api_secret=API_SECRET,
-    demo=True
+    api_secret=API_SECRET
 )
 
-# Configuración de trading
-RISK_PERCENT = 0.10       # 10% del saldo
-LEVERAGE = 10
-TP_PERCENT = 0.005        # 0.5% fijo
-SL_PERCENT = 0.005        # 0.5% fijo
+# Porcentaje fijo de TP y SL
+TP_PERCENT = 0.5 / 100   # 0.5%
+SL_PERCENT = 0.5 / 100   # 0.5%
 
+# --- Función para ajustar qty al paso permitido por Bybit ---
+def ajustar_qty(qty, step):
+    step = Decimal(str(step))
+    qty = Decimal(str(qty))
+    return float((qty // step) * step)  # redondea hacia abajo
 
-@app.get("/demo-balance")
-def get_demo_balance():
+# --- Endpoint de prueba ---
+@app.get("/")
+async def root():
+    return {"status": "BybitBot API funcionando"}
+
+# --- Endpoint para ejecutar trade ---
+@app.post("/trade")
+async def trade(request: Request):
     try:
-        balance = session.get_wallet_balance(accountType="UNIFIED")
-        return balance
-    except Exception as e:
-        return {"error": str(e)}
+        data = await request.json()
+        symbol = data.get("symbol")
+        side = data.get("side")
+        leverage = data.get("leverage", 10)
+        usdt_amount = data.get("usdt", 10)  # monto en USDT
 
+        if not symbol or not side:
+            return {"error": "Faltan parámetros (symbol, side)"}
 
-def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent: float):
-    """
-    Calcula el qty para una orden de mercado considerando:
-    - saldo disponible
-    - riesgo
-    - apalancamiento
-    - restricciones del token (minOrderQty y qtyStep)
-    """
-    try:
+        # --- Obtener info del símbolo ---
         info = session.get_instruments_info(category="linear", symbol=symbol)
-        data = info["result"]["list"][0]
-        min_qty = float(data["minOrderQty"])
-        qty_step = float(data["qtyStep"])
-        last_price = float(data["lastPrice"])
+        if "result" not in info or not info["result"]["list"]:
+            return {"error": f"No se encontró info del símbolo {symbol}"}
 
-        # Calculamos valor de posición
-        position_value = total_balance * risk_percent * leverage
-        raw_qty = position_value / last_price
+        token_info = info["result"]["list"][0]
+        price = float(token_info["lastPrice"])
+        qty_step = float(token_info["lotSizeFilter"]["qtyStep"])
+        min_qty = float(token_info["lotSizeFilter"]["minOrderQty"])
 
-        # Ajustamos qty a múltiplos de qty_step
-        qty = math.floor(raw_qty / qty_step) * qty_step
+        # --- Calcular qty en base a USDT asignado ---
+        raw_qty = usdt_amount / price
+        qty = ajustar_qty(raw_qty, qty_step)
 
-        # Aseguramos que sea >= min_qty
         if qty < min_qty:
-            qty = min_qty
+            return {"error": f"Cantidad {qty} menor al mínimo permitido {min_qty}"}
 
-        return qty, last_price
-
-    except Exception as e:
-        return None, None
-
-
-def execute_trade(symbol: str, side: str):
-    """
-    Ejecuta un trade usando Bybit API v5 (demo unified).
-    Maneja fallback si la API no devuelve ciertos campos.
-    """
-    try:
-        # Info del símbolo
-        info = session.get_instruments_info(category="linear", symbol=symbol)
-        symbol_info = info["result"]["list"][0]
-
-        # Extraemos valores
-        last_price = float(symbol_info.get("lastPrice", 0) or 0)
-        min_qty = float(symbol_info.get("lotSizeFilter", {}).get("minOrderQty", 0.001))
-        qty_step = float(symbol_info.get("lotSizeFilter", {}).get("qtyStep", 0.001))
-
-        # Si lastPrice está vacío, lo tomamos del ticker
-        if last_price == 0:
-            ticker = session.get_tickers(category="linear", symbol=symbol)
-            last_price = float(ticker["result"]["list"][0]["lastPrice"])
-
-        # Balance disponible
-        wallet = session.get_wallet_balance(accountType="UNIFIED")
-        total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
-
-        # Calculamos tamaño de la posición
-        position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / last_price, 4), min_qty)
-
-        # Definimos TP y SL con 0.5% fijos
-        if side.upper() == "LONG":
-            tp_price = last_price * (1 + TP_PERCENT)
-            sl_price = last_price * (1 - SL_PERCENT)
-            order_side = "Buy"
+        # --- Calcular TP y SL ---
+        if side.lower() == "buy":
+            tp = price * (1 + TP_PERCENT)
+            sl = price * (1 - SL_PERCENT)
         else:
-            tp_price = last_price * (1 - TP_PERCENT)
-            sl_price = last_price * (1 + SL_PERCENT)
-            order_side = "Sell"
+            tp = price * (1 - TP_PERCENT)
+            sl = price * (1 + SL_PERCENT)
 
-        print(f"Ejecutando → {symbol}, Side={side}, Qty={qty}, TP={tp_price}, SL={sl_price}")
-
-        # Ejecutamos la orden
+        # --- Crear orden a mercado ---
         order = session.place_order(
             category="linear",
             symbol=symbol,
-            side=order_side,
+            side=side.capitalize(),
             orderType="Market",
             qty=str(qty),
-            leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 4)),
-            stopLoss=str(round(sl_price, 4))
+            leverage=str(leverage),
+            takeProfit=str(round(tp, 2)),
+            stopLoss=str(round(sl, 2))
         )
-        return {"status": "success", "order": order}
+
+        return {"status": "Orden enviada", "order": order, "qty": qty, "price": price}
 
     except Exception as e:
         return {"error": f"No se pudo ejecutar trade: {str(e)}"}
-
-
-@app.get("/test-order")
-def test_order():
-    """
-    Orden de prueba rápida
-    """
-    symbol = "BTCUSDT"  # cámbialo a USELESSUSDT si quieres
-    side = "LONG"
-    return execute_trade(symbol, side)
-
-
-@app.post("/webhook")
-async def webhook(request: Request):
-    """
-    Recibe alertas de TradingView en formato JSON:
-    {
-        "symbol": "BTCUSDT",
-        "side": "LONG" or "SHORT"
-    }
-    """
-    try:
-        data = await request.json()
-        symbol = data.get("symbol").replace(".P", "")
-        side = data.get("side")
-
-        if not symbol or not side:
-            return {"error": "Faltan datos en la alerta"}
-
-        return execute_trade(symbol, side)
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.get("/ping")
-def ping():
-    """
-    Endpoint para mantener vivo el servicio
-    """
-    return {"status": "ok"}
