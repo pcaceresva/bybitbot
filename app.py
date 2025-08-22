@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 import os
 from pybit.unified_trading import HTTP
-import math
 
 app = FastAPI()
 
@@ -22,8 +21,14 @@ TP_PERCENT = 0.005        # 0.5%
 SL_PERCENT = 0.005        # 0.5%
 LEVERAGE = 10
 
+# Decimales seguros para Demo Unified
+DECIMALS_QTY = 3       # máximo 3 decimales en cantidad
+DECIMALS_PRICE = 2     # máximo 2 decimales en precio
+MIN_QTY = 0.001        # cantidad mínima por trade
+
 @app.get("/demo-balance")
 def get_demo_balance():
+    """Devuelve saldo disponible en Demo Unified"""
     try:
         balance = session.get_wallet_balance(accountType="UNIFIED")
         return balance
@@ -32,56 +37,34 @@ def get_demo_balance():
 
 def execute_trade(symbol: str, side: str):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified,
-    respetando los filtros de cantidad (lotSize) y precio (tickSize) del mercado.
+    Ejecuta un trade usando precio de mercado en Demo Unified.
     """
     try:
-        # Obtenemos información del mercado para el par
-        symbol_info = next(
-            (s for s in session.get_symbols(category="linear")["result"]["list"] if s["name"] == symbol),
-            None
-        )
-        if not symbol_info:
-            return {"error": f"Símbolo {symbol} no encontrado en el mercado"}
-
-        # Parámetros de lotSize y precio
-        min_qty = float(symbol_info["lotSizeFilter"]["minQty"])
-        qty_step = float(symbol_info["lotSizeFilter"]["qtyStep"])
-        tick_size = float(symbol_info["priceFilter"]["tickSize"])
-
-        # Obtenemos precio de mercado
+        # Obtenemos precio de mercado del símbolo
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        # Obtenemos saldo
+        # Obtenemos saldo disponible
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
-        # Calculamos tamaño de la posición usando % de riesgo y apalancamiento
-        position_value = total_balance * RISK_PERCENT * LEVERAGE
-        raw_qty = position_value / price
+        # Calculamos tamaño de la posición
+        raw_qty = total_balance * RISK_PERCENT * LEVERAGE / price
+        qty = max(round(raw_qty, DECIMALS_QTY), MIN_QTY)
 
-        # Ajustamos qty según lotSize
-        qty = max(round(raw_qty / qty_step) * qty_step, min_qty)
-        qty = round(qty, 8)  # Para evitar decimales excesivos
-
-        # Calculamos TP y SL según side
+        # Calculamos TP y SL
         if side.upper() == "LONG":
-            tp_price = price * (1 + TP_PERCENT)
-            sl_price = price * (1 - SL_PERCENT)
+            tp_price = round(price * (1 + TP_PERCENT), DECIMALS_PRICE)
+            sl_price = round(price * (1 - SL_PERCENT), DECIMALS_PRICE)
             order_side = "Buy"
         else:  # SHORT
-            tp_price = price * (1 - TP_PERCENT)
-            sl_price = price * (1 + SL_PERCENT)
+            tp_price = round(price * (1 - TP_PERCENT), DECIMALS_PRICE)
+            sl_price = round(price * (1 + SL_PERCENT), DECIMALS_PRICE)
             order_side = "Sell"
 
-        # Ajustamos TP y SL según tickSize
-        tp_price = round(tp_price / tick_size) * tick_size
-        sl_price = round(sl_price / tick_size) * tick_size
-
-        # Ejecutamos la orden a precio de mercado
+        # Ejecutamos orden de mercado
         order = session.place_order(
-            category="linear",
+            category="linear",       # Perpetuo USDT-M
             symbol=symbol,
             side=order_side,
             orderType="Market",
@@ -90,7 +73,6 @@ def execute_trade(symbol: str, side: str):
             takeProfit=str(tp_price),
             stopLoss=str(sl_price)
         )
-
         return {"status": "success", "order": order}
 
     except Exception as e:
@@ -101,7 +83,7 @@ async def webhook(request: Request):
     """
     Recibe alertas de TradingView en formato JSON:
     {
-        "symbol": "BTCUSDT",
+        "symbol": "BTCUSDT.P",
         "side": "LONG" or "SHORT"
     }
     """
@@ -119,16 +101,13 @@ def test_order():
     """
     Orden de prueba rápida a precio de mercado
     """
-    # Cambia el par a uno válido en tu Demo Unified
-    symbol = "USELESSUSDT"
-    side = "LONG"  # o "SHORT"
+    symbol = "BTCUSDT"   # Cambia al símbolo de tu alerta
+    side = "LONG"         # o "SHORT"
     return execute_trade(symbol, side)
-
+    
 @app.get("/ping")
 def ping():
-    return {"status": "alive"}
-
-
-
-
-
+    """
+    Endpoint para mantener vivo el webservice
+    """
+    return {"status": "OK"}
