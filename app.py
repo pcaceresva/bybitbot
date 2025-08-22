@@ -32,9 +32,19 @@ def get_demo_balance():
 
 def execute_trade(symbol: str, side: str):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified.
+    Ejecuta un trade usando precio de mercado en Demo Unified,
+    ajustando automáticamente cantidad mínima y decimales permitidos.
     """
     try:
+        # Obtenemos información del símbolo (minQty y qtyPrecision)
+        symbols_info = session.get_symbols(category="linear")
+        info = next((s for s in symbols_info["result"]["list"] if s["name"] == symbol), None)
+        if not info:
+            return {"error": f"Símbolo {symbol} no encontrado en Bybit"}
+
+        min_qty = float(info.get("lotSizeFilter", {}).get("minOrderQty", 0.001))
+        qty_precision = int(info.get("lotSizeFilter", {}).get("qtyPrecision", 4))
+
         # Obtenemos precio de mercado
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
@@ -45,7 +55,11 @@ def execute_trade(symbol: str, side: str):
 
         # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price, 3), 0.001)  # Ajusta decimales según el par
+        qty = round(position_value / price, qty_precision)
+
+        # Aseguramos que sea al menos la cantidad mínima
+        if qty < min_qty:
+            qty = min_qty
 
         # Calculamos TP y SL
         if side.upper() == "LONG":
@@ -57,19 +71,18 @@ def execute_trade(symbol: str, side: str):
             sl_price = price * (1 + SL_PERCENT)
             order_side = "Sell"
 
-        # Log para debugging
         print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
 
         # Ejecutamos la orden
         order = session.place_order(
-            category="linear",       # Perpetuo USDT-M
+            category="linear",
             symbol=symbol,
             side=order_side,
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
+            takeProfit=str(round(tp_price, 6)),
+            stopLoss=str(round(sl_price, 6))
         )
         return {"status": "success", "order": order}
 
@@ -116,3 +129,4 @@ def ping():
     Endpoint para mantener activo el webservice
     """
     return {"status": "alive"}
+
