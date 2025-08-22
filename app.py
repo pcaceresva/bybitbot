@@ -101,4 +101,9 @@ def test_order():
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
 
+@app.get("/ping")
+def ping():
+    return {"status": "alive"}
+
+
 
