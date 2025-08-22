@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 import os
 from pybit.unified_trading import HTTP
 import math
+import requests
 
 app = FastAPI()
 
@@ -117,33 +118,17 @@ def ping():
     """
     return {"status": "alive"}
     
-@app.get("/symbol-info/{symbol}")
-def symbol_info(symbol: str):
-    """
-    Devuelve información del símbolo desde Bybit Demo (o mainnet según tu API)
-    """
-    try:
-        # Eliminamos ".P" si viene desde TV
-        symbol_clean = symbol.replace(".P", "")
-        
-        # Usamos el endpoint de símbolos
-        response = session.get_instruments(category="linear", symbol=symbol_clean)
-        
-        # Revisamos si hay resultado
-        if "result" in response and "list" in response["result"] and response["result"]["list"]:
-            info = response["result"]["list"][0]
-            return {
-                "symbol": info["name"],
-                "baseCurrency": info["baseCurrency"],
-                "quoteCurrency": info["quoteCurrency"],
-                "minOrderQty": info["lotSizeFilter"]["minOrderQty"],
-                "maxOrderQty": info["lotSizeFilter"]["maxOrderQty"],
-                "qtyPrecision": info["lotSizeFilter"]["qtyPrecision"],
-                "pricePrecision": info["priceFilter"]["tickSize"]
-            }
+def obtener_info_simbolo(symbol: str):
+    url = f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        if data['result']:
+            return data['result'][0]
         else:
             return {"error": "Símbolo no encontrado"}
-    except Exception as e:
-        return {"error": str(e)}
+    else:
+        return {"error": f"Error al consultar la API: {response.status_code}"}
+
 
 
