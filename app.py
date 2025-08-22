@@ -1,39 +1,50 @@
-from pybit.unified_trading import HTTP
+from fastapi import FastAPI
+import requests
+import time
+import hmac
+import hashlib
 
-# Inicializa la sesión en Demo Unified Trading
-session = HTTP(
-    demo=True,  # Demo
-    api_key="kAEstgmtlzcLtBUC9D",
-    api_secret="Qzn86OWLpLfLdHrGNOq8V6Vcli6oRiP0XJhG",
-)
+app = FastAPI()
 
-# Función para agregar fondos de prueba en Demo
-def apply_demo_funds():
-    response = session.post(
-        path="/v5/account/demo-apply-money",
-        json={
-            "adjustType": 0,
-            "utaDemoApplyMoney": [
-                {"coin": "USDT", "amountStr": "109"},
-                {"coin": "ETH", "amountStr": "1"}
-            ]
-        }
-    )
-    return response
+# --- Configura tus claves API de Demo aquí ---
+API_KEY = "kAEstgmtlzcLtBUC9D"
+API_SECRET = "Qzn86OWLpLfLdHrGNOq8V6Vcli6oRiP0XJhG"
+BASE_URL = "https://api-demo.bybit.com"
 
-# Función para ver balance de Unified Demo
-def get_demo_balance():
-    balance = session.get(
-        path="/v5/account/wallet-balance",
-        params={"accountType": "UNIFIED"}
-    )
-    return balance
+# --- Función para generar firma ---
+def generate_signature(secret, params):
+    """
+    Genera firma HMAC SHA256 para Bybit v5
+    """
+    param_str = "&".join(f"{key}={value}" for key, value in sorted(params.items()))
+    return hmac.new(secret.encode(), param_str.encode(), hashlib.sha256).hexdigest()
 
-# --- EJECUCIÓN ---
-# Aplicar fondos de prueba
-print("Aplicando fondos Demo...")
-print(apply_demo_funds())
+@app.get("/test-balance")
+def test_balance():
+    timestamp = int(time.time() * 1000)
+    
+    # Parámetros requeridos
+    params = {
+        "accountType": "UNIFIED",
+        "timestamp": timestamp,
+        "recvWindow": 5000
+    }
 
-# Revisar saldo Demo
-print("Balance Demo Unified:")
-print(get_demo_balance())
+    # Generar la firma
+    signature = generate_signature(API_SECRET, params)
+    headers = {
+        "X-BAPI-API-KEY": API_KEY,
+        "X-BAPI-SIGN": signature,
+        "X-BAPI-TIMESTAMP": str(timestamp),
+        "X-BAPI-RECV-WINDOW": "5000"
+    }
+
+    url = f"{BASE_URL}/v5/account/wallet-balance"
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
