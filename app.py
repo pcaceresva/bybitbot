@@ -63,6 +63,8 @@ def execute_trade(symbol: str, side: str):
             order_side = "Sell"
 
         # Ejecutamos orden de mercado
+        print(f"Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
+
         order = session.place_order(
             category="linear",       # Perpetuo USDT-M
             symbol=symbol,
@@ -111,3 +113,4 @@ def ping():
     Endpoint para mantener vivo el webservice
     """
     return {"status": "OK"}
+
