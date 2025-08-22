@@ -100,15 +100,19 @@ def execute_trade(symbol: str, side: str):
     except Exception as e:
         return {"error": str(e)}
 
+import json
+
 @app.post("/webhook")
 async def webhook(request: Request):
     body_bytes = await request.body()
-    print("RAW BODY:", body_bytes)
+    raw_body = body_bytes.decode("utf-8").strip()  # eliminamos espacios y saltos de línea
+    print("RAW BODY:", raw_body)
+    
     try:
-        data = await request.json()
+        data = json.loads(raw_body)
     except Exception as e:
         print("JSON ERROR:", str(e))
-        return {"error": str(e), "raw_body": body_bytes.decode("utf-8")}
+        return {"error": str(e), "raw_body": raw_body}
     
     symbol = data.get("symbol", "").replace(".P", "")
     side = data.get("side", "")
@@ -127,5 +131,6 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
 
