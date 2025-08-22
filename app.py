@@ -102,21 +102,25 @@ def execute_trade(symbol: str, side: str):
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """
-    Recibe alertas de TradingView en formato JSON:
-    {
-        "symbol": "BTCUSDT",
-        "side": "LONG" or "SHORT"
-    }
-    """
-    data = await request.json()
-    symbol = data.get("symbol").replace(".P", "")  # Remove .P si lo envía TradingView
-    side = data.get("side")
+    try:
+        # Intentamos leer como JSON
+        try:
+            data = await request.json()
+        except:
+            # Si falla, leemos como texto
+            body = await request.body()
+            return {"error": f"JSON inválido o vacío. Cuerpo recibido: {body.decode()}"}
 
-    if not symbol or not side:
-        return {"error": "Faltan datos en la alerta"}
+        symbol = data.get("symbol", "").replace(".P", "")
+        side = data.get("side", "").upper()
 
-    return execute_trade(symbol, side)
+        if not symbol or side not in ["LONG", "SHORT"]:
+            return {"error": "Faltan datos válidos en la alerta"}
+
+        return execute_trade(symbol, side)
+
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/test-order")
 def test_order():
@@ -127,3 +131,4 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
