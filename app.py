@@ -121,24 +121,29 @@ def ping():
 @app.get("/test-symbol")
 def test_symbol(symbol: str = "BTCUSDT"):
     """
-    Obtiene información del símbolo usando la API de Bybit.
-    Parámetro:
-        symbol: el símbolo que quieres consultar (por defecto BTCUSDT)
+    Consulta información de un símbolo en Demo Unified.
+    Devuelve precio actual, cantidad mínima y decimales permitidos.
     """
-    return obtener_info_simbolo(symbol)
+    try:
+        # Obtenemos el ticker
+        ticker = session.get_tickers(category="linear", symbol=symbol)
+        last_price = float(ticker["result"]["list"][0]["lastPrice"])
+        
+        # Obtenemos info del símbolo
+        info = session.get_symbol_info(category="linear", symbol=symbol)
+        info_data = info["result"]["list"][0]
 
-def obtener_info_simbolo(symbol: str):
-    url = f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        if data['result']:
-            return data['result'][0]
-        else:
-            return {"error": "Símbolo no encontrado"}
-    else:
-        return {"error": f"Error al consultar la API: {response.status_code}"}
+        min_qty = float(info_data["lotSizeFilter"]["minTrdQty"])
+        qty_step = float(info_data["lotSizeFilter"]["qtyStep"])
+        price_step = float(info_data["priceFilter"]["tickSize"])
 
+        return {
+            "symbol": symbol,
+            "last_price": last_price,
+            "min_qty": min_qty,
+            "qty_step": qty_step,
+            "price_step": price_step
+        }
 
-
-
+    except Exception as e:
+        return {"error": f"Error al consultar la API: {str(e)}"}
