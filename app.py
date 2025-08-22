@@ -32,14 +32,6 @@ def get_demo_balance():
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """
-    Recibe alertas de TradingView en formato JSON:
-    {
-        "symbol": "BTCUSDT",
-        "side": "LONG" or "SHORT",
-        "price": 29000
-    }
-    """
     data = await request.json()
     
     symbol = data.get("symbol")
@@ -55,27 +47,40 @@ async def webhook(request: Request):
 
     # Calculamos tamaño de la posición usando 10% del saldo
     position_value = total_balance * RISK_PERCENT * LEVERAGE
-    qty = round(position_value / price, 6)  # Ajustar decimales según el par
+
+    # Obtenemos info de symbol para decimales
+    symbol_info = session.get_symbol_info(symbol=symbol)
+    qty_precision = symbol_info['result']['quantityPrecision']
+    price_precision = symbol_info['result']['pricePrecision']
+
+    # Calculamos cantidad y redondeamos según el precision
+    qty = round(position_value / price, qty_precision)
+    if qty <= 0:
+        return {"error": "Cantidad calculada es menor o igual a 0"}
 
     # Calculamos TP y SL
     if side.upper() == "LONG":
-        tp_price = price * (1 + TP_PERCENT)
-        sl_price = price * (1 - SL_PERCENT)
-    else:  # SHORT
-        tp_price = price * (1 - TP_PERCENT)
-        sl_price = price * (1 + SL_PERCENT)
+        tp_price = round(price * (1 + TP_PERCENT), price_precision)
+        sl_price = round(price * (1 - SL_PERCENT), price_precision)
+    else:
+        tp_price = round(price * (1 - TP_PERCENT), price_precision)
+        sl_price = round(price * (1 + SL_PERCENT), price_precision)
 
     try:
         order = session.place_order(
-            category="linear",       # Perpetuo USDT-M
+            category="linear",
             symbol=symbol,
             side="Buy" if side.upper() == "LONG" else "Sell",
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
+            takeProfit=str(tp_price),
+            stopLoss=str(sl_price)
         )
+        print("ORDER RESPONSE:", order)  # Para depuración
         return {"status": "success", "order": order}
     except Exception as e:
+        print("ORDER ERROR:", str(e))
         return {"error": str(e)}
+
+
