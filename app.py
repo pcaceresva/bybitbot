@@ -50,7 +50,9 @@ def execute_trade(symbol: str, side: str):
 
         # Calculamos tamaño de la posición
         raw_qty = total_balance * RISK_PERCENT * LEVERAGE / price
-        qty = max(round(raw_qty, DECIMALS_QTY), MIN_QTY)
+        # Ajustamos cantidad según los decimales requeridos por el token
+        qty = max(round(position_value / price, 4), 0.0001)  # 4 decimales y mínimo permitido
+
 
         # Calculamos TP y SL
         if side.upper() == "LONG":
@@ -110,5 +112,6 @@ def ping():
     Endpoint para mantener vivo el webservice
     """
     return {"status": "OK"}
+
 
 
