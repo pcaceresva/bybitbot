@@ -130,10 +130,11 @@ def test_order():
     """
     Orden de prueba rápida a precio de mercado
     """
-    # Cambia el par a uno válido en tu Demo Unified
-    symbol = "USELESSUSDT"
+    symbol = "USELESSUSDT"  # Cambia al token que quieras probar
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
+
 
 
 
