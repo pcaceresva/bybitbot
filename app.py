@@ -33,12 +33,19 @@ def get_demo_balance():
 
 def execute_trade(symbol: str, side: str):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified.
+    Ejecuta un trade usando precio de mercado en Demo Unified,
+    ajustando cantidad mínima y decimales según la información disponible.
     """
     try:
-        # Obtenemos precio de mercado
+        # Intentamos obtener el precio de mercado
         ticker = session.get_tickers(category="linear", symbol=symbol)
-        price = float(ticker["result"]["list"][0]["lastPrice"])
+        last_price = ticker["result"]["list"][0].get("lastPrice")
+        price = float(last_price) if last_price else 1.0  # fallback a 1 si es null
+
+        # Información de cantidad y decimales
+        symbol_info = session.get_symbol_info(category="linear", symbol=symbol)
+        qty_step = float(symbol_info["result"]["list"][0].get("qtyStep", 0.001))
+        min_qty = float(symbol_info["result"]["list"][0].get("minOrderQty", qty_step))
 
         # Obtenemos saldo
         wallet = session.get_wallet_balance(accountType="UNIFIED")
@@ -46,7 +53,7 @@ def execute_trade(symbol: str, side: str):
 
         # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price, 4), 0.001)  # Ajustar decimales según el par
+        qty = max(round(position_value / price / qty_step) * qty_step, min_qty)
 
         # Calculamos TP y SL
         if side.upper() == "LONG":
@@ -68,8 +75,8 @@ def execute_trade(symbol: str, side: str):
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 4)),
-            stopLoss=str(round(sl_price, 4))
+            takeProfit=str(round(tp_price, 2)),
+            stopLoss=str(round(sl_price, 2))
         )
         return {"status": "success", "order": order}
 
@@ -126,3 +133,4 @@ def test_symbol(symbol: str = "USELESSUSDT"):
         }
     except Exception as e:
         return {"error": str(e)}
+
