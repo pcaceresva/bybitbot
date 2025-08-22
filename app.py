@@ -102,25 +102,21 @@ def execute_trade(symbol: str, side: str):
 
 @app.post("/webhook")
 async def webhook(request: Request):
+    body_bytes = await request.body()
+    print("RAW BODY:", body_bytes)
     try:
-        # Intentamos leer como JSON
-        try:
-            data = await request.json()
-        except:
-            # Si falla, leemos como texto
-            body = await request.body()
-            return {"error": f"JSON inválido o vacío. Cuerpo recibido: {body.decode()}"}
-
-        symbol = data.get("symbol", "").replace(".P", "")
-        side = data.get("side", "").upper()
-
-        if not symbol or side not in ["LONG", "SHORT"]:
-            return {"error": "Faltan datos válidos en la alerta"}
-
-        return execute_trade(symbol, side)
-
+        data = await request.json()
     except Exception as e:
-        return {"error": str(e)}
+        print("JSON ERROR:", str(e))
+        return {"error": str(e), "raw_body": body_bytes.decode("utf-8")}
+    
+    symbol = data.get("symbol", "").replace(".P", "")
+    side = data.get("side", "")
+    
+    if not symbol or not side:
+        return {"error": "Faltan datos en la alerta"}
+    
+    return execute_trade(symbol, side)
 
 @app.get("/test-order")
 def test_order():
@@ -131,4 +127,5 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
