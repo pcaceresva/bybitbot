@@ -3,6 +3,7 @@ import os
 from pybit.unified_trading import HTTP
 import requests
 import math
+import json
 
 app = FastAPI()
 
@@ -104,22 +105,19 @@ import json
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    body_bytes = await request.body()
-    raw_body = body_bytes.decode("utf-8").strip()  # eliminamos espacios y saltos de línea
-    print("RAW BODY:", raw_body)
-    
     try:
-        data = json.loads(raw_body)
+        body_bytes = await request.body()
+        body_str = body_bytes.decode("utf-8").strip()  # elimina saltos de línea al inicio y final
+        data = json.loads(body_str)                   # parsea JSON "limpio"
     except Exception as e:
-        print("JSON ERROR:", str(e))
-        return {"error": str(e), "raw_body": raw_body}
-    
+        return {"error": f"Error parsing JSON: {str(e)}", "raw_body": body_bytes.decode("utf-8")}
+
     symbol = data.get("symbol", "").replace(".P", "")
-    side = data.get("side", "")
-    
+    side = data.get("side", "").upper()
+
     if not symbol or not side:
-        return {"error": "Faltan datos en la alerta"}
-    
+        return {"error": "Faltan datos en la alerta", "data": data}
+
     return execute_trade(symbol, side)
 
 @app.get("/test-order")
@@ -131,6 +129,7 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
 
 
