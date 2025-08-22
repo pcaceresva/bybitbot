@@ -32,6 +32,14 @@ def get_demo_balance():
 
 @app.post("/webhook")
 async def webhook(request: Request):
+    """
+    Recibe alertas de TradingView en formato JSON:
+    {
+        "symbol": "BTCUSDT",
+        "side": "LONG" or "SHORT",
+        "price": 29000
+    }
+    """
     data = await request.json()
     
     symbol = data.get("symbol")
@@ -41,46 +49,57 @@ async def webhook(request: Request):
     if not symbol or not side or not price:
         return {"error": "Faltan datos en la alerta"}
 
-    # Obtenemos saldo
-    wallet = session.get_wallet_balance(accountType="UNIFIED")
-    total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
+    return execute_trade(symbol, side, price)
 
-    # Calculamos tamaño de la posición usando 10% del saldo
-    position_value = total_balance * RISK_PERCENT * LEVERAGE
+@app.get("/test-order")
+def test_order():
+    """
+    Ejecuta un trade de prueba rápido al precio de mercado sin depender de TradingView
+    """
+    symbol = "USELESSUSDT.P"  # o cualquier símbolo que quieras probar
+    side = "LONG"       # LONG o SHORT
 
-    # Obtenemos info de symbol para decimales
-    symbol_info = session.get_symbol_info(symbol=symbol)
-    qty_precision = symbol_info['result']['quantityPrecision']
-    price_precision = symbol_info['result']['pricePrecision']
+    # Obtenemos el precio actual de mercado
+    ticker = session.get_symbol_info(symbol=symbol)
+    market_price = float(ticker['result']['lastPrice'])
 
-    # Calculamos cantidad y redondeamos según el precision
-    qty = round(position_value / price, qty_precision)
-    if qty <= 0:
-        return {"error": "Cantidad calculada es menor o igual a 0"}
+    # Llamamos a la función que ejecuta la orden
+    return execute_trade(symbol, side, market_price)
 
-    # Calculamos TP y SL
-    if side.upper() == "LONG":
-        tp_price = round(price * (1 + TP_PERCENT), price_precision)
-        sl_price = round(price * (1 - SL_PERCENT), price_precision)
-    else:
-        tp_price = round(price * (1 - TP_PERCENT), price_precision)
-        sl_price = round(price * (1 + SL_PERCENT), price_precision)
-
+def execute_trade(symbol: str, side: str, price: float):
+    """
+    Lógica para calcular cantidad, TP, SL y enviar orden
+    """
     try:
+        # Obtenemos saldo
+        wallet = session.get_wallet_balance(accountType="UNIFIED")
+        total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
+
+        # Calculamos tamaño de la posición usando 10% del saldo
+        position_value = total_balance * RISK_PERCENT * LEVERAGE
+        qty = round(position_value / price, 6)  # Ajustar decimales según el par
+
+        # Calculamos TP y SL
+        if side.upper() == "LONG":
+            tp_price = price * (1 + TP_PERCENT)
+            sl_price = price * (1 - SL_PERCENT)
+            order_side = "Buy"
+        else:  # SHORT
+            tp_price = price * (1 - TP_PERCENT)
+            sl_price = price * (1 + SL_PERCENT)
+            order_side = "Sell"
+
+        # Enviamos orden de mercado
         order = session.place_order(
-            category="linear",
+            category="linear",       # Perpetuo USDT-M
             symbol=symbol,
-            side="Buy" if side.upper() == "LONG" else "Sell",
+            side=order_side,
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(tp_price),
-            stopLoss=str(sl_price)
+            takeProfit=str(round(tp_price, 2)),
+            stopLoss=str(round(sl_price, 2))
         )
-        print("ORDER RESPONSE:", order)  # Para depuración
         return {"status": "success", "order": order}
     except Exception as e:
-        print("ORDER ERROR:", str(e))
         return {"error": str(e)}
-
-
