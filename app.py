@@ -62,18 +62,39 @@ def calculate_qty(symbol: str, total_balance: float, leverage: int, risk_percent
 def execute_trade(symbol: str, side: str):
     """
     Ejecuta un trade usando precio de mercado en Demo Unified.
+    Soporta fallback si la API no devuelve lastPrice, minOrderQty o qtyStep.
     """
     try:
+        # Intentamos obtener info del símbolo
+        info = session.get_symbol_info(symbol=symbol)
+        last_price = info.get("lastPrice")
+        min_qty = info.get("minOrderQty") or 0.001  # fallback
+        qty_step = info.get("qtyStep") or 0.001     # fallback
+
+        # Si lastPrice es None, usamos el ticker
+        if not last_price:
+            ticker = session.get_tickers(category="linear", symbol=symbol)
+            last_price = float(ticker["result"]["list"][0]["lastPrice"])
+
         # Obtenemos saldo
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
-        # Calculamos qty y precio de mercado
-        qty, price = calculate_qty(symbol, total_balance, LEVERAGE, RISK_PERCENT)
-        if qty is None:
-            return {"error": "No se pudo calcular qty: token inválido o API"}
+        # Calculamos tamaño de la posición
+        position_value = total_balance * RISK_PERCENT * LEVERAGE
+        qty = max(round(position_value / float(last_price), 4), min_qty)
 
-        order_side = "Buy" if side.upper() == "LONG" else "Sell"
+        # Calculamos TP y SL
+        if side.upper() == "LONG":
+            tp_price = float(last_price) * (1 + TP_PERCENT)
+            sl_price = float(last_price) * (1 - SL_PERCENT)
+            order_side = "Buy"
+        else:
+            tp_price = float(last_price) * (1 - TP_PERCENT)
+            sl_price = float(last_price) * (1 + SL_PERCENT)
+            order_side = "Sell"
+
+        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
 
         # Ejecutamos la orden
         order = session.place_order(
@@ -82,14 +103,25 @@ def execute_trade(symbol: str, side: str):
             side=order_side,
             orderType="Market",
             qty=str(qty),
-            leverage=LEVERAGE
+            leverage=LEVERAGE,
+            takeProfit=str(round(tp_price, 4)),
+            stopLoss=str(round(sl_price, 4))
         )
-
-        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, Precio mercado: {price}")
         return {"status": "success", "order": order}
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"No se pudo ejecutar trade: {str(e)}"}
+
+
+@app.get("/test-order")
+def test_order():
+    """
+    Orden de prueba rápida a precio de mercado
+    """
+    symbol = "BTCUSDT"  # Cambia por USELESSUSDT o el que quieras
+    side = "LONG"
+    return execute_trade(symbol, side)
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -111,17 +143,11 @@ async def webhook(request: Request):
         return execute_trade(symbol, side)
     except Exception as e:
         return {"error": str(e)}
-
-@app.get("/test-order")
-def test_order(symbol: str = "BTCUSDT", side: str = "LONG"):
-    """
-    Orden de prueba rápida a precio de mercado
-    """
-    return execute_trade(symbol, side)
-
+        
 @app.get("/ping")
 def ping():
     """
     Endpoint para mantener vivo el servicio
     """
     return {"status": "ok"}
+
