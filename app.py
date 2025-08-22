@@ -116,3 +116,34 @@ def ping():
     Endpoint para mantener activo el webservice
     """
     return {"status": "alive"}
+    
+@app.get("/symbol-info/{symbol}")
+def symbol_info(symbol: str):
+    """
+    Devuelve información del símbolo desde Bybit Demo (o mainnet según tu API)
+    """
+    try:
+        # Eliminamos ".P" si viene desde TV
+        symbol_clean = symbol.replace(".P", "")
+        
+        # Usamos el endpoint de símbolos
+        response = session.get_instruments(category="linear", symbol=symbol_clean)
+        
+        # Revisamos si hay resultado
+        if "result" in response and "list" in response["result"] and response["result"]["list"]:
+            info = response["result"]["list"][0]
+            return {
+                "symbol": info["name"],
+                "baseCurrency": info["baseCurrency"],
+                "quoteCurrency": info["quoteCurrency"],
+                "minOrderQty": info["lotSizeFilter"]["minOrderQty"],
+                "maxOrderQty": info["lotSizeFilter"]["maxOrderQty"],
+                "qtyPrecision": info["lotSizeFilter"]["qtyPrecision"],
+                "pricePrecision": info["priceFilter"]["tickSize"]
+            }
+        else:
+            return {"error": "Símbolo no encontrado"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
