@@ -1,52 +1,29 @@
 from fastapi import FastAPI
-import requests
-import time
-import hmac
-import hashlib
-import os
+from pybit.unified_trading import HTTP
 
 app = FastAPI()
 
-# Leemos las variables de entorno
+# Configura tus credenciales demo de Bybit Unified
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
-BASE_URL = "https://api-demo.bybit.com"
 
-def generate_signature(secret, method, path, expires, query_string=""):
-    """
-    Genera la firma HMAC_SHA256 para Bybit v5 Demo Unified
-    """
-    origin = f"{method}{path}{expires}{query_string}"
-    return hmac.new(secret.encode(), origin.encode(), hashlib.sha256).hexdigest()
+# Creamos la sesión con demo=True
+session = HTTP(
+    api_key=API_KEY,
+    api_secret=API_SECRET,
+    demo=True
+)
 
 @app.get("/demo-balance")
 def get_demo_balance():
-    path = "/v5/account/wallet-balance"
-    method = "GET"
-    timestamp = int(time.time() * 1000)
-    recv_window = 5000
-
-    # Construimos la query string
-    query_string = f"accountType=UNIFIED&recvWindow={recv_window}&timestamp={timestamp}"
-
-    # Generamos la firma
-    signature = generate_signature(API_SECRET, method, path, timestamp, query_string)
-
-    # Headers
-    headers = {
-        "X-BAPI-API-KEY": API_KEY,
-        "X-BAPI-SIGN": signature,
-        "X-BAPI-TIMESTAMP": str(timestamp),
-        "X-BAPI-RECV-WINDOW": str(recv_window)
-    }
-
-    # URL completa con query
-    url = f"{BASE_URL}{path}?{query_string}"
-
-    # Llamada GET
-    r = requests.get(url, headers=headers)
-    
+    """
+    Devuelve el saldo de la cuenta demo Unified.
+    """
     try:
-        return r.json()
+        # Obtenemos el balance
+        balance = session.get_wallet_balance(accountType="UNIFIED")
+        return balance
     except Exception as e:
-        return {"error": "No se pudo decodificar JSON", "raw_text": r.text, "exception": str(e)}
+        return {"error": "No se pudo obtener el saldo", "exception": str(e)}
+
+
