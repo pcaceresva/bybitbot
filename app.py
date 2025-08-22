@@ -1,13 +1,14 @@
 from fastapi import FastAPI
+import os
 from pybit.unified_trading import HTTP
 
 app = FastAPI()
 
-# Configura tus credenciales demo de Bybit Unified
+# Variables de entorno en Render
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 
-# Creamos la sesión con demo=True
+# Inicializamos sesión de Unified Demo
 session = HTTP(
     api_key=API_KEY,
     api_secret=API_SECRET,
@@ -16,14 +17,8 @@ session = HTTP(
 
 @app.get("/demo-balance")
 def get_demo_balance():
-    """
-    Devuelve el saldo de la cuenta demo Unified.
-    """
     try:
-        # Obtenemos el balance
         balance = session.get_wallet_balance(accountType="UNIFIED")
         return balance
     except Exception as e:
-        return {"error": "No se pudo obtener el saldo", "exception": str(e)}
-
-
+        return {"error": str(e)}
