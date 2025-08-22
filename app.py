@@ -97,13 +97,14 @@ def test_order():
     Orden de prueba rápida a precio de mercado
     """
     # Cambia el par a uno válido en tu Demo Unified
-    symbol = "BTCUSDT"
+    symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
 
 @app.get("/ping")
 def ping():
     return {"status": "alive"}
+
 
 
 
