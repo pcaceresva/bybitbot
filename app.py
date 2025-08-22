@@ -21,29 +21,27 @@ def generate_signature(secret, method, path, expires, query_string=""):
 def get_demo_balance():
     path = "/v5/account/wallet-balance"
     method = "GET"
-    timestamp = int(time.time() * 1000)
-    recv_window = 5000
+    timestamp = str(int(time.time() * 1000))
+    recv_window = "5000"
 
-    # Construimos la query string tal cual la enviaremos
+    # Query string exacta
     query_string = f"accountType=UNIFIED&recvWindow={recv_window}&timestamp={timestamp}"
 
-    # Generamos la firma
+    # Firma
     signature = generate_signature(API_SECRET, method, path, timestamp, query_string)
 
     # Headers
     headers = {
         "X-BAPI-API-KEY": API_KEY,
         "X-BAPI-SIGN": signature,
-        "X-BAPI-TIMESTAMP": str(timestamp),
-        "X-BAPI-RECV-WINDOW": str(recv_window)
+        "X-BAPI-TIMESTAMP": timestamp,
+        "X-BAPI-RECV-WINDOW": recv_window
     }
 
-    # URL completa con query
     url = f"{BASE_URL}{path}?{query_string}"
 
-    # Llamada GET
     r = requests.get(url, headers=headers)
-    
+
     try:
         return r.json()
     except Exception as e:
