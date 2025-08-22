@@ -71,17 +71,28 @@ def calculate_qty(symbol: str, risk_usdt: float):
 
 # 🔹 Endpoint para test de symbol
 @app.get("/test-symbol")
-def test_symbol(symbol: str = "BTCUSDT"):
-    result = calculate_qty(symbol, RISK_USDT)
-    if not result:
-        return {"error": "No se pudo calcular qty"}
-    qty, last_price = result
-    return {
-        "symbol": symbol,
-        "lastPrice": last_price,
-        "qty": qty
-    }
+def test_symbol(symbol: str):
+    try:
+        # Pido info de TODOS los símbolos
+        response = session.get_instruments_info(category="linear", symbol=symbol)
 
+        if "result" not in response or "list" not in response["result"] or len(response["result"]["list"]) == 0:
+            return {"error": "No se pudo obtener información del símbolo"}
+
+        data = response["result"]["list"][0]
+
+        return {
+            "symbol": data["symbol"],
+            "priceScale": data.get("priceScale"),
+            "lotSizeFilter": data.get("lotSizeFilter"),   # paso importante para qty
+            "tickSize": data.get("priceFilter", {}).get("tickSize"),
+            "minOrderQty": data.get("lotSizeFilter", {}).get("minOrderQty"),
+            "maxOrderQty": data.get("lotSizeFilter", {}).get("maxOrderQty"),
+            "qtyStep": data.get("lotSizeFilter", {}).get("qtyStep"),
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 # 🔹 Endpoint para enviar orden
 @app.post("/trade")
@@ -129,3 +140,4 @@ async def trade(request: Request):
 # 🔹 Iniciar servidor local
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
