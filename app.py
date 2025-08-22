@@ -111,17 +111,22 @@ import json
 async def webhook(request: Request):
     try:
         data = await request.json()
-        symbol = data.get("symbol").replace(".P", "")
-        side = data.get("side")
+    except Exception:
+        raw = await request.body()
+        print(f"RAW BODY: {raw}")
+        try:
+            import json
+            data = json.loads(raw)
+        except Exception as e:
+            return {"error": f"No se pudo parsear JSON: {str(e)}"}
 
-        if not symbol or not side:
-            return {"error": "Faltan datos en la alerta"}
+    symbol = data.get("symbol", "").replace(".P", "")
+    side = data.get("side", "")
 
-        return execute_trade(symbol, side)
-    except Exception as e:
-        import traceback
-        logging.error(f"Error en webhook: {e}\n{traceback.format_exc()}")
-        return {"error": str(e)}
+    if not symbol or not side:
+        return {"error": "Faltan datos en la alerta"}
+
+    return execute_trade(symbol, side)
 
 @app.get("/test-order")
 def test_order():
@@ -132,3 +137,4 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
