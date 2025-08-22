@@ -83,7 +83,7 @@ async def webhook(request: Request):
     }
     """
     data = await request.json()
-    symbol = data.get("symbol")
+    symbol = data.get("symbol").replace(".P", "")
     side = data.get("side")
 
     if not symbol or not side:
@@ -100,4 +100,5 @@ def test_order():
     symbol = "BTCUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
