@@ -128,9 +128,6 @@ async def webhook(request: Request):
 
     return execute_trade(symbol, side)
 
-
-    return execute_trade(symbol, side)
-
 @app.get("/test-order")
 def test_order():
     """
@@ -140,5 +137,6 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
 
