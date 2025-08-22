@@ -4,6 +4,9 @@ from pybit.unified_trading import HTTP
 import requests
 import math
 import json
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
@@ -83,8 +86,7 @@ def execute_trade(symbol: str, side: str):
             order_side = "Sell"
 
         # --- 6. Debug ---
-        print(f"Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
-
+        logging.info(f"Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
         # --- 7. Ejecutar orden ---
         order = session.place_order(
             category="linear",
@@ -108,19 +110,18 @@ import json
 @app.post("/webhook")
 async def webhook(request: Request):
     try:
-        body_bytes = await request.body()
-        body_str = body_bytes.decode("utf-8").strip()  # elimina saltos de línea y espacios
-        data = json.loads(body_str)                    # parsea JSON limpio
+        data = await request.json()
+        symbol = data.get("symbol").replace(".P", "")
+        side = data.get("side")
+
+        if not symbol or not side:
+            return {"error": "Faltan datos en la alerta"}
+
+        return execute_trade(symbol, side)
     except Exception as e:
-        return {"error": f"Error parsing JSON: {str(e)}", "raw_body": body_bytes.decode("utf-8")}
-
-    symbol = data.get("symbol", "").replace(".P", "")
-    side = data.get("side", "").upper()
-
-    if not symbol or not side:
-        return {"error": "Faltan datos en la alerta", "data": data}
-
-    return execute_trade(symbol, side)
+        import traceback
+        logging.error(f"Error en webhook: {e}\n{traceback.format_exc()}")
+        return {"error": str(e)}
 
 @app.get("/test-order")
 def test_order():
@@ -131,8 +132,3 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
-
-
-
-
-
