@@ -117,7 +117,16 @@ def ping():
     Endpoint para mantener activo el webservice
     """
     return {"status": "alive"}
-    
+
+@app.get("/test-symbol")
+def test_symbol(symbol: str = "BTCUSDT"):
+    """
+    Obtiene información del símbolo usando la API de Bybit.
+    Parámetro:
+        symbol: el símbolo que quieres consultar (por defecto BTCUSDT)
+    """
+    return obtener_info_simbolo(symbol)
+
 def obtener_info_simbolo(symbol: str):
     url = f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
     response = requests.get(url)
@@ -129,6 +138,7 @@ def obtener_info_simbolo(symbol: str):
             return {"error": "Símbolo no encontrado"}
     else:
         return {"error": f"Error al consultar la API: {response.status_code}"}
+
 
 
 
