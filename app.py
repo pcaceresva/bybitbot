@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request
 import os
+import requests
 from pybit.unified_trading import HTTP
 import math
-import requests
 
 app = FastAPI()
 
@@ -46,7 +46,7 @@ def execute_trade(symbol: str, side: str):
 
         # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price, 3), 0.001)  # Ajusta decimales según el par
+        qty = max(round(position_value / price, 4), 0.001)  # Ajustar decimales según el par
 
         # Calculamos TP y SL
         if side.upper() == "LONG":
@@ -58,19 +58,18 @@ def execute_trade(symbol: str, side: str):
             sl_price = price * (1 + SL_PERCENT)
             order_side = "Sell"
 
-        # Log para debugging
         print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
 
         # Ejecutamos la orden
         order = session.place_order(
-            category="linear",       # Perpetuo USDT-M
+            category="linear",
             symbol=symbol,
             side=order_side,
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
+            takeProfit=str(round(tp_price, 4)),
+            stopLoss=str(round(sl_price, 4))
         )
         return {"status": "success", "order": order}
 
@@ -82,23 +81,16 @@ async def webhook(request: Request):
     """
     Recibe alertas de TradingView en formato JSON:
     {
-        "symbol": "BTCUSDT",
+        "symbol": "USELESSUSDT",
         "side": "LONG" or "SHORT"
     }
     """
-    try:
-        data = await request.json()
-    except Exception as e:
-        return {"error": f"JSON inválido: {str(e)}"}
-
-    symbol = data.get("symbol")
+    data = await request.json()
+    symbol = data.get("symbol").replace(".P", "")
     side = data.get("side")
 
     if not symbol or not side:
         return {"error": "Faltan datos en la alerta"}
-
-    # Elimina el .P si tu ticker de TV lo incluye
-    symbol = symbol.replace(".P", "")
 
     return execute_trade(symbol, side)
 
@@ -107,43 +99,30 @@ def test_order():
     """
     Orden de prueba rápida a precio de mercado
     """
-    symbol = "BTCUSDT"  # Cambia a un par válido en tu Demo Unified
-    side = "LONG"        # o "SHORT"
+    symbol = "USELESSUSDT"
+    side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
 
-@app.get("/ping")
-def ping():
-    """
-    Endpoint para mantener activo el webservice
-    """
-    return {"status": "alive"}
-
 @app.get("/test-symbol")
-def test_symbol(symbol: str = "BTCUSDT"):
+def test_symbol(symbol: str = "USELESSUSDT"):
     """
-    Consulta información de un símbolo en Demo Unified.
-    Devuelve precio actual, cantidad mínima y decimales permitidos.
+    Consulta información del símbolo demo mediante API REST directa
     """
     try:
-        # Obtenemos el ticker
-        ticker = session.get_tickers(category="linear", symbol=symbol)
-        last_price = float(ticker["result"]["list"][0]["lastPrice"])
-        
-        # Obtenemos info del símbolo
-        info = session.get_symbol_info(category="linear", symbol=symbol)
-        info_data = info["result"]["list"][0]
-
-        min_qty = float(info_data["lotSizeFilter"]["minTrdQty"])
-        qty_step = float(info_data["lotSizeFilter"]["qtyStep"])
-        price_step = float(info_data["priceFilter"]["tickSize"])
-
+        url = f"https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
+        resp = requests.get(url)
+        if resp.status_code != 200:
+            return {"error": f"Error al consultar la API: {resp.status_code}"}
+        data = resp.json()
+        # Devolver solo lo relevante
+        info = data.get("result", {}).get("list", [{}])[0]
         return {
-            "symbol": symbol,
-            "last_price": last_price,
-            "min_qty": min_qty,
-            "qty_step": qty_step,
-            "price_step": price_step
+            "symbol": info.get("symbol"),
+            "lastPrice": info.get("lastPrice"),
+            "minOrderQty": info.get("minOrderQty"),
+            "maxOrderQty": info.get("maxOrderQty"),
+            "qtyStep": info.get("qtyStep"),
+            "priceScale": info.get("priceScale")
         }
-
     except Exception as e:
-        return {"error": f"Error al consultar la API: {str(e)}"}
+        return {"error": str(e)}
