@@ -12,7 +12,7 @@ TRADE_RISK_PERCENT = 2.0  # 2% de tu capital
 # API Bybit
 API_KEY = os.getenv("BYBIT_API_KEY")
 API_SECRET = os.getenv("BYBIT_API_SECRET")
-BASE_URL = "https://api.bybit.com"  # Cuenta real
+BASE_URL = "https://api-demo.bybit.com"  # Cuenta real
 
 def sign(params, secret):
     qs = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
@@ -112,4 +112,5 @@ def test_balance():
     
     r = requests.get(BASE_URL + "/v2/private/wallet/balance", params=params)
     return r.json()
+
 
