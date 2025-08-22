@@ -32,9 +32,23 @@ def get_demo_balance():
 
 def execute_trade(symbol: str, side: str):
     """
-    Ejecuta un trade usando precio de mercado en Demo Unified.
+    Ejecuta un trade usando precio de mercado en Demo Unified,
+    respetando los filtros de cantidad (lotSize) y precio (tickSize) del mercado.
     """
     try:
+        # Obtenemos información del mercado para el par
+        symbol_info = next(
+            (s for s in session.get_symbols(category="linear")["result"]["list"] if s["name"] == symbol),
+            None
+        )
+        if not symbol_info:
+            return {"error": f"Símbolo {symbol} no encontrado en el mercado"}
+
+        # Parámetros de lotSize y precio
+        min_qty = float(symbol_info["lotSizeFilter"]["minQty"])
+        qty_step = float(symbol_info["lotSizeFilter"]["qtyStep"])
+        tick_size = float(symbol_info["priceFilter"]["tickSize"])
+
         # Obtenemos precio de mercado
         ticker = session.get_tickers(category="linear", symbol=symbol)
         price = float(ticker["result"]["list"][0]["lastPrice"])
@@ -43,31 +57,40 @@ def execute_trade(symbol: str, side: str):
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
-        # Calculamos tamaño de la posición
+        # Calculamos tamaño de la posición usando % de riesgo y apalancamiento
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price, 3), 0.001)  # Ajustar decimales según el par
+        raw_qty = position_value / price
 
-        # Calculamos TP y SL
+        # Ajustamos qty según lotSize
+        qty = max(round(raw_qty / qty_step) * qty_step, min_qty)
+        qty = round(qty, 8)  # Para evitar decimales excesivos
+
+        # Calculamos TP y SL según side
         if side.upper() == "LONG":
             tp_price = price * (1 + TP_PERCENT)
             sl_price = price * (1 - SL_PERCENT)
             order_side = "Buy"
-        else:
+        else:  # SHORT
             tp_price = price * (1 - TP_PERCENT)
             sl_price = price * (1 + SL_PERCENT)
             order_side = "Sell"
 
-        # Ejecutamos la orden
+        # Ajustamos TP y SL según tickSize
+        tp_price = round(tp_price / tick_size) * tick_size
+        sl_price = round(sl_price / tick_size) * tick_size
+
+        # Ejecutamos la orden a precio de mercado
         order = session.place_order(
-            category="linear",       # Perpetuo USDT-M
+            category="linear",
             symbol=symbol,
             side=order_side,
             orderType="Market",
             qty=str(qty),
             leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
+            takeProfit=str(tp_price),
+            stopLoss=str(sl_price)
         )
+
         return {"status": "success", "order": order}
 
     except Exception as e:
@@ -104,6 +127,7 @@ def test_order():
 @app.get("/ping")
 def ping():
     return {"status": "alive"}
+
 
 
 
