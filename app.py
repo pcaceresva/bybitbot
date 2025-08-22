@@ -6,45 +6,45 @@ import hashlib
 
 app = FastAPI()
 
-# --- Configura tus claves API de Demo aquí ---
 API_KEY = "kAEstgmtlzcLtBUC9D"
 API_SECRET = "Qzn86OWLpLfLdHrGNOq8V6Vcli6oRiP0XJhG"
 BASE_URL = "https://api-demo.bybit.com"
 
-# --- Función para generar firma ---
-def generate_signature(secret, params):
+def generate_signature(secret, method, path, expires, query_string=""):
     """
-    Genera firma HMAC SHA256 para Bybit v5
+    Genera la firma HMAC_SHA256 para Bybit v5 Demo Unified
     """
-    param_str = "&".join(f"{key}={value}" for key, value in sorted(params.items()))
-    return hmac.new(secret.encode(), param_str.encode(), hashlib.sha256).hexdigest()
+    origin = f"{method}{path}{expires}{query_string}"
+    return hmac.new(secret.encode(), origin.encode(), hashlib.sha256).hexdigest()
 
-@app.get("/test-balance")
-def test_balance():
+@app.get("/demo-balance")
+def get_demo_balance():
+    path = "/v5/account/wallet-balance"
+    method = "GET"
     timestamp = int(time.time() * 1000)
-    
-    # Parámetros requeridos
-    params = {
-        "accountType": "UNIFIED",
-        "timestamp": timestamp,
-        "recvWindow": 5000
-    }
+    recv_window = 5000
 
-    # Generar la firma
-    signature = generate_signature(API_SECRET, params)
+    # Construimos la query string tal cual la enviaremos
+    query_string = f"accountType=UNIFIED&recvWindow={recv_window}&timestamp={timestamp}"
+
+    # Generamos la firma
+    signature = generate_signature(API_SECRET, method, path, timestamp, query_string)
+
+    # Headers
     headers = {
         "X-BAPI-API-KEY": API_KEY,
         "X-BAPI-SIGN": signature,
         "X-BAPI-TIMESTAMP": str(timestamp),
-        "X-BAPI-RECV-WINDOW": "5000"
+        "X-BAPI-RECV-WINDOW": str(recv_window)
     }
 
-    url = f"{BASE_URL}/v5/account/wallet-balance"
+    # URL completa con query
+    url = f"{BASE_URL}{path}?{query_string}"
 
+    # Llamada GET
+    r = requests.get(url, headers=headers)
+    
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
-        r.raise_for_status()
         return r.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
-
+    except Exception as e:
+        return {"error": "No se pudo decodificar JSON", "raw_text": r.text, "exception": str(e)}
