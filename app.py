@@ -116,7 +116,7 @@ def test_symbol(symbol: str = "USELESSUSDT"):
     Consulta información del símbolo demo mediante API REST directa
     """
     try:
-        url = f"https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
+        url = f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={symbol}"
         resp = requests.get(url)
         if resp.status_code != 200:
             return {"error": f"Error al consultar la API: {resp.status_code}"}
@@ -133,4 +133,5 @@ def test_symbol(symbol: str = "USELESSUSDT"):
         }
     except Exception as e:
         return {"error": str(e)}
+
 
