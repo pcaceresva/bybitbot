@@ -51,20 +51,18 @@ async def webhook(request: Request):
 
     return execute_trade(symbol, side, price)
 
-@app.get("/test-order")
+@app.get("/test_order")
 def test_order():
-    """
-    Ejecuta un trade de prueba rápido al precio de mercado sin depender de TradingView
-    """
-    symbol = "USELESSUSDT.P"  # o cualquier símbolo que quieras probar
-    side = "LONG"       # LONG o SHORT
+    symbol = "BTCUSDT.P"  # símbolo real en Demo Unified
+    side = "LONG"
+    
+    try:
+        # Obtenemos precio de mercado
+        market_price = float(session.get_mark_price(symbol=symbol)["result"]["markPrice"])
+        return execute_trade(symbol, side, market_price)
+    except Exception as e:
+        return {"error": str(e)}
 
-    # Obtenemos el precio actual de mercado
-    ticker = session.get_symbol_info(symbol=symbol)
-    market_price = float(ticker['result']['lastPrice'])
-
-    # Llamamos a la función que ejecuta la orden
-    return execute_trade(symbol, side, market_price)
 
 def execute_trade(symbol: str, side: str, price: float):
     """
@@ -103,3 +101,4 @@ def execute_trade(symbol: str, side: str, price: float):
         return {"status": "success", "order": order}
     except Exception as e:
         return {"error": str(e)}
+
