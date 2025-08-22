@@ -12,10 +12,11 @@ BASE_URL = "https://api-demo.bybit.com"
 
 def generate_signature(secret, method, path, timestamp, query_string=""):
     """
-    Firma HMAC_SHA256 para Bybit v5 Demo Unified
+    Genera la firma HMAC_SHA256 para Bybit v5 Demo Unified
     """
     origin_string = f"{method}{path}{timestamp}{query_string}"
-    return hmac.new(secret.encode(), origin_string.encode(), hashlib.sha256).hexdigest()
+    signature = hmac.new(secret.encode(), origin_string.encode(), hashlib.sha256).hexdigest()
+    return signature
 
 @app.get("/demo-balance")
 def get_demo_balance():
@@ -25,17 +26,12 @@ def get_demo_balance():
     recv_window = "5000"
 
     # Query string ordenada alfabéticamente
-    query_params = {
-        "accountType": "UNIFIED",
-        "recvWindow": recv_window,
-        "timestamp": timestamp
-    }
+    query_params = f"accountType=UNIFIED&recvWindow={recv_window}&timestamp={timestamp}"
 
-    query_string = "&".join([f"{k}={v}" for k, v in sorted(query_params.items())])
+    # Generamos la firma correcta
+    signature = generate_signature(API_SECRET, method, path, timestamp, query_params)
 
-    # Generamos la firma
-    signature = generate_signature(API_SECRET, method, path, timestamp, query_string)
-
+    # Headers según Bybit v5
     headers = {
         "X-BAPI-API-KEY": API_KEY,
         "X-BAPI-SIGN": signature,
@@ -43,9 +39,12 @@ def get_demo_balance():
         "X-BAPI-RECV-WINDOW": recv_window
     }
 
-    url = f"{BASE_URL}{path}?{query_string}"
-    r = requests.get(url, headers=headers)
+    # URL completa
+    url = f"{BASE_URL}{path}?{query_params}"
 
+    # Llamada GET
+    r = requests.get(url, headers=headers)
+    
     try:
         return r.json()
     except Exception as e:
