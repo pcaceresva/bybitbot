@@ -49,7 +49,7 @@ def execute_trade(symbol: str, side: str):
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
         # Calculamos tamaño de la posición
-        raw_qty = total_balance * RISK_PERCENT * LEVERAGE / price
+        position_value = total_balance * RISK_PERCENT * LEVERAGE
         # Ajustamos cantidad según los decimales requeridos por el token
         qty = max(round(position_value / price, 4), 0.0001)  # 4 decimales y mínimo permitido
 
@@ -112,6 +112,7 @@ def ping():
     Endpoint para mantener vivo el webservice
     """
     return {"status": "OK"}
+
 
 
 
