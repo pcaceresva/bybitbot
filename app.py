@@ -1,12 +1,7 @@
 from fastapi import FastAPI, Request
 import os
 from pybit.unified_trading import HTTP
-import requests
 import math
-import json
-import logging
-
-logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
@@ -27,13 +22,6 @@ TP_PERCENT = 0.005        # 0.5%
 SL_PERCENT = 0.005        # 0.5%
 LEVERAGE = 10
 
-@app.get("/ping")
-def ping():
-    """
-    Endpoint para mantener activo el servicio
-    """
-    return {"status": "ok"}
-
 @app.get("/demo-balance")
 def get_demo_balance():
     try:
@@ -45,37 +33,21 @@ def get_demo_balance():
 def execute_trade(symbol: str, side: str):
     """
     Ejecuta un trade usando precio de mercado en Demo Unified.
-    Ajusta automáticamente la cantidad según los decimales y mínimo permitido del símbolo.
     """
     try:
-        # --- 1. Obtener información del símbolo ---
-        url_symbols = "https://api-demo.bybit.com/v5/market/symbols?category=linear"
-        r = requests.get(url_symbols)
-        symbols_data = r.json()
+        # Obtenemos precio de mercado
+        ticker = session.get_tickers(category="linear", symbol=symbol)
+        price = float(ticker["result"]["list"][0]["lastPrice"])
 
-        symbol_info = next((s for s in symbols_data["result"]["list"] if s["name"] == symbol), None)
-        if not symbol_info:
-            return {"error": f"Símbolo {symbol} no encontrado en Bybit Demo"}
-
-        min_qty = float(symbol_info["minOrderQty"])
-        qty_precision = int(symbol_info["qtyPrecision"])
-
-        # --- 2. Obtener precio de mercado ---
-        url_ticker = f"https://api-demo.bybit.com/v5/market/tickers?category=linear&symbol={symbol}"
-        r = requests.get(url_ticker)
-        ticker_data = r.json()
-        price = float(ticker_data["result"]["list"][0]["lastPrice"])
-
-        # --- 3. Obtener saldo ---
+        # Obtenemos saldo
         wallet = session.get_wallet_balance(accountType="UNIFIED")
         total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
 
-        # --- 4. Calcular cantidad ---
+        # Calculamos tamaño de la posición
         position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = round(position_value / price, qty_precision)
-        qty = max(qty, min_qty)  # Asegura que sea >= mínimo permitido
+        qty = max(round(position_value / price, 3), 0.001)  # Ajusta decimales según el par
 
-        # --- 5. Calcular TP y SL ---
+        # Calculamos TP y SL
         if side.upper() == "LONG":
             tp_price = price * (1 + TP_PERCENT)
             sl_price = price * (1 - SL_PERCENT)
@@ -85,11 +57,12 @@ def execute_trade(symbol: str, side: str):
             sl_price = price * (1 + SL_PERCENT)
             order_side = "Sell"
 
-        # --- 6. Debug ---
-        logging.info(f"Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
-        # --- 7. Ejecutar orden ---
+        # Log para debugging
+        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
+
+        # Ejecutamos la orden
         order = session.place_order(
-            category="linear",
+            category="linear",       # Perpetuo USDT-M
             symbol=symbol,
             side=order_side,
             orderType="Market",
@@ -103,25 +76,28 @@ def execute_trade(symbol: str, side: str):
     except Exception as e:
         return {"error": str(e)}
 
-import json
-
-import json
-
 @app.post("/webhook")
 async def webhook(request: Request):
-    # Leemos el body como texto plano
-    body_bytes = await request.body()
-    body_text = body_bytes.decode("utf-8").strip()  # Limpiamos saltos de línea
+    """
+    Recibe alertas de TradingView en formato JSON:
+    {
+        "symbol": "BTCUSDT",
+        "side": "LONG" or "SHORT"
+    }
+    """
     try:
-        data = json.loads(body_text)
-    except json.JSONDecodeError as e:
-        return {"error": f"JSON inválido: {str(e)}", "raw": body_text}
+        data = await request.json()
+    except Exception as e:
+        return {"error": f"JSON inválido: {str(e)}"}
 
-    symbol = data.get("symbol", "").replace(".P", "")
+    symbol = data.get("symbol")
     side = data.get("side")
 
     if not symbol or not side:
         return {"error": "Faltan datos en la alerta"}
+
+    # Elimina el .P si tu ticker de TV lo incluye
+    symbol = symbol.replace(".P", "")
 
     return execute_trade(symbol, side)
 
@@ -130,12 +106,13 @@ def test_order():
     """
     Orden de prueba rápida a precio de mercado
     """
-    symbol = "USELESSUSDT"  # Cambia al token que quieras probar
-    side = "LONG"  # o "SHORT"
+    symbol = "BTCUSDT"  # Cambia a un par válido en tu Demo Unified
+    side = "LONG"        # o "SHORT"
     return execute_trade(symbol, side)
 
-
-
-
-
-
+@app.get("/ping")
+def ping():
+    """
+    Endpoint para mantener activo el webservice
+    """
+    return {"status": "alive"}
