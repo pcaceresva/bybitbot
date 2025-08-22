@@ -102,3 +102,14 @@ async def webhook(request: Request):
         "tp": tp_res.json(),
         "sl": sl_res.json()
     }
+@app.get("/test-balance")
+def test_balance():
+    params = {
+        "api_key": API_KEY,
+        "timestamp": int(time.time() * 1000)
+    }
+    params["sign"] = sign(params, API_SECRET)
+    
+    r = requests.get(BASE_URL + "/v2/private/wallet/balance", params=params)
+    return r.json()
+
