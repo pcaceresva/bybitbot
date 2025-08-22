@@ -109,19 +109,16 @@ import json
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    body = await request.body()
-    print(f"RAW BODY: {body}")  # Siempre imprime lo que llega
-    
-    if not body:
-        return {"error": "Cuerpo vacío recibido"}
-
+    # Leemos el body como texto plano
+    body_bytes = await request.body()
+    body_text = body_bytes.decode("utf-8").strip()  # Limpiamos saltos de línea
     try:
-        data = await request.json()
-    except Exception as e:
-        return {"error": f"JSON inválido: {str(e)}", "raw": body.decode("utf-8")}
+        data = json.loads(body_text)
+    except json.JSONDecodeError as e:
+        return {"error": f"JSON inválido: {str(e)}", "raw": body_text}
 
     symbol = data.get("symbol", "").replace(".P", "")
-    side = data.get("side", "").upper()
+    side = data.get("side")
 
     if not symbol or not side:
         return {"error": "Faltan datos en la alerta"}
@@ -137,6 +134,7 @@ def test_order():
     symbol = "USELESSUSDT"
     side = "LONG"  # o "SHORT"
     return execute_trade(symbol, side)
+
 
 
 
