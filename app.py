@@ -33,10 +33,9 @@ def send_order(symbol: str, side: str, qty: float, order_type="Market"):
     }
     params["sign"] = sign_request(params, API_SECRET)
     r = requests.post(url, data=params)
-    try:
-        return r.json()
-    except:
-        return {"error": "No se pudo parsear la respuesta de Bybit", "text": r.text}
+print("Respuesta cruda de Bybit:", r.text)  # 👈 así vemos qué responde realmente Bybit
+return {"raw": r.text}  # no intenta parsear a JSON
+
 
 # ===== ENDPOINT =====
 @app.route("/webhook", methods=["POST"])
@@ -72,3 +71,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
