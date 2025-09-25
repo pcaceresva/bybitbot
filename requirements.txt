@@ -1,5 +1,2 @@
-fastapi
-uvicorn
+flask
 requests
-gunicorn
-pybit==5.11.0
