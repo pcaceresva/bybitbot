@@ -1,12 +1,16 @@
 from flask import Flask, request, jsonify
-import requests, time, hmac, hashlib, os
+import requests
+import time
+import hmac
+import hashlib
+import os
 
 app = Flask(__name__)
 
 # ===== CONFIGURACIÓN =====
 API_KEY = os.getenv("BYBIT_API_KEY", "TU_API_KEY")
 API_SECRET = os.getenv("BYBIT_API_SECRET", "TU_API_SECRET")
-BASE_URL = "https://api.bybit.com"  # Demo o real usan el mismo endpoint
+BASE_URL = "https://api.bybit.com"  # demo o real, funciona igual
 
 # ===== FUNCIONES =====
 def sign_request(params: dict, secret: str):
@@ -21,7 +25,7 @@ def send_order(symbol: str, side: str, qty: float, order_type="Market"):
     params = {
         "api_key": API_KEY,
         "timestamp": int(time.time() * 1000),
-        "category": "linear",   # "linear" = USDT Perpetual, "spot" = spot
+        "category": "linear",   # "linear" = USDT Perpetual
         "symbol": symbol,
         "side": side,           # "Buy" o "Sell"
         "orderType": order_type,
@@ -29,35 +33,42 @@ def send_order(symbol: str, side: str, qty: float, order_type="Market"):
     }
     params["sign"] = sign_request(params, API_SECRET)
     r = requests.post(url, data=params)
-    return r.json()
+    try:
+        return r.json()
+    except:
+        return {"error": "No se pudo parsear la respuesta de Bybit", "text": r.text}
 
 # ===== ENDPOINT =====
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.json
-        print("Payload recibido:", data)
+        # Verifica que se reciba JSON
+        if not request.is_json:
+            return jsonify({"error": "No se recibió JSON"}), 400
+
+        data = request.get_json()
 
         symbol = data.get("symbol")
         side = data.get("side")
-        qty = data.get("qty", 0.01)  # valor por defecto si no viene en el JSON
+        qty = data.get("qty", 0.01)
 
+        # Validación mínima
         if not symbol or not side:
-            return jsonify({"error": "Faltan parámetros (symbol, side)"}), 400
+            return jsonify({"error": "Faltan parámetros (symbol o side)"}), 400
 
+        # Envía la orden
         result = send_order(symbol, side, qty)
-        print("Respuesta Bybit:", result)
         return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/")
+# Ruta principal para verificar que el servidor está arriba
+@app.route("/", methods=["GET"])
 def home():
     return "Bot de TradingView conectado a Bybit Demo ✅"
 
+# ===== INICIO DE FLASK =====
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
