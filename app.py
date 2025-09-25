@@ -1,118 +1,60 @@
-from fastapi import FastAPI, Request
-import os
-from pybit.unified_trading import HTTP
-import math
+from flask import Flask, request, jsonify
+import requests, time, hmac, hashlib, os
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Variables de entorno
-API_KEY = os.getenv("API_KEY")
-API_SECRET = os.getenv("API_SECRET")
+# ===== CONFIGURACIÓN =====
+API_KEY = os.getenv("BYBIT_API_KEY", "TU_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET", "TU_API_SECRET")
+BASE_URL = "https://api.bybit.com"  # Demo o real usan el mismo endpoint
 
-# Inicializamos sesión de Unified Demo
-session = HTTP(
-    api_key=API_KEY,
-    api_secret=API_SECRET,
-    demo=True
-)
+# ===== FUNCIONES =====
+def sign_request(params: dict, secret: str):
+    """Genera la firma para Bybit V5"""
+    _val = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
+    return hmac.new(bytes(secret, "utf-8"), bytes(_val, "utf-8"), hashlib.sha256).hexdigest()
 
-# Configuración de trading
-RISK_PERCENT = 0.10       # 10% del saldo
-TP_PERCENT = 0.005        # 0.5%
-SL_PERCENT = 0.005        # 0.5%
-LEVERAGE = 10
-
-@app.get("/demo-balance")
-def get_demo_balance():
-    try:
-        balance = session.get_wallet_balance(accountType="UNIFIED")
-        return balance
-    except Exception as e:
-        return {"error": str(e)}
-
-def execute_trade(symbol: str, side: str):
-    """
-    Ejecuta un trade usando precio de mercado en Demo Unified.
-    """
-    try:
-        # Obtenemos precio de mercado
-        ticker = session.get_tickers(category="linear", symbol=symbol)
-        price = float(ticker["result"]["list"][0]["lastPrice"])
-
-        # Obtenemos saldo
-        wallet = session.get_wallet_balance(accountType="UNIFIED")
-        total_balance = float(wallet["result"]["list"][0]["totalAvailableBalance"])
-
-        # Calculamos tamaño de la posición
-        position_value = total_balance * RISK_PERCENT * LEVERAGE
-        qty = max(round(position_value / price, 3), 0.001)  # Ajusta decimales según el par
-
-        # Calculamos TP y SL
-        if side.upper() == "LONG":
-            tp_price = price * (1 + TP_PERCENT)
-            sl_price = price * (1 - SL_PERCENT)
-            order_side = "Buy"
-        else:
-            tp_price = price * (1 - TP_PERCENT)
-            sl_price = price * (1 + SL_PERCENT)
-            order_side = "Sell"
-
-        # Log para debugging
-        print(f"Ejecutando trade → Symbol: {symbol}, Side: {side}, Qty: {qty}, TP: {tp_price}, SL: {sl_price}")
-
-        # Ejecutamos la orden
-        order = session.place_order(
-            category="linear",       # Perpetuo USDT-M
-            symbol=symbol,
-            side=order_side,
-            orderType="Market",
-            qty=str(qty),
-            leverage=LEVERAGE,
-            takeProfit=str(round(tp_price, 2)),
-            stopLoss=str(round(sl_price, 2))
-        )
-        return {"status": "success", "order": order}
-
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/webhook")
-async def webhook(request: Request):
-    """
-    Recibe alertas de TradingView en formato JSON:
-    {
-        "symbol": "BTCUSDT",
-        "side": "LONG" or "SHORT"
+def send_order(symbol: str, side: str, qty: float, order_type="Market"):
+    """Envía una orden a Bybit"""
+    endpoint = "/v5/order/create"
+    url = BASE_URL + endpoint
+    params = {
+        "api_key": API_KEY,
+        "timestamp": int(time.time() * 1000),
+        "category": "linear",   # "linear" = USDT Perpetual, "spot" = spot
+        "symbol": symbol,
+        "side": side,           # "Buy" o "Sell"
+        "orderType": order_type,
+        "qty": str(qty)
     }
-    """
+    params["sign"] = sign_request(params, API_SECRET)
+    r = requests.post(url, data=params)
+    return r.json()
+
+# ===== ENDPOINT =====
+@app.route("/webhook", methods=["POST"])
+def webhook():
     try:
-        data = await request.json()
+        data = request.json
+        print("Payload recibido:", data)
+
+        symbol = data.get("symbol")
+        side = data.get("side")
+        qty = data.get("qty", 0.01)  # valor por defecto si no viene en el JSON
+
+        if not symbol or not side:
+            return jsonify({"error": "Faltan parámetros (symbol, side)"}), 400
+
+        result = send_order(symbol, side, qty)
+        print("Respuesta Bybit:", result)
+        return jsonify(result)
+
     except Exception as e:
-        return {"error": f"JSON inválido: {str(e)}"}
+        return jsonify({"error": str(e)}), 500
 
-    symbol = data.get("symbol")
-    side = data.get("side")
+@app.route("/")
+def home():
+    return "Bot de TradingView conectado a Bybit Demo ✅"
 
-    if not symbol or not side:
-        return {"error": "Faltan datos en la alerta"}
-
-    # Elimina el .P si tu ticker de TV lo incluye
-    symbol = symbol.replace(".P", "")
-
-    return execute_trade(symbol, side)
-
-@app.get("/test-order")
-def test_order():
-    """
-    Orden de prueba rápida a precio de mercado
-    """
-    symbol = "BTCUSDT"  # Cambia a un par válido en tu Demo Unified
-    side = "LONG"        # o "SHORT"
-    return execute_trade(symbol, side)
-
-@app.get("/ping")
-def ping():
-    """
-    Endpoint para mantener activo el webservice
-    """
-    return {"status": "alive"}
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
