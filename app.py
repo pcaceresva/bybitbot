@@ -1,74 +1,63 @@
-from flask import Flask, request, jsonify
-import requests
+import os
 import time
 import hmac
 import hashlib
-import os
+import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# ===== CONFIGURACIÓN =====
-API_KEY = os.getenv("BYBIT_API_KEY", "TU_API_KEY")
-API_SECRET = os.getenv("BYBIT_API_SECRET", "TU_API_SECRET")
-BASE_URL = "https://api.bybit.com"  # demo o real, funciona igual
+# 🔑 Claves desde variables de entorno (Render → Dashboard → Environment)
+API_KEY = os.getenv("BYBIT_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET")
 
-# ===== FUNCIONES =====
-def sign_request(params: dict, secret: str):
-    """Genera la firma para Bybit V5"""
-    _val = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
-    return hmac.new(bytes(secret, "utf-8"), bytes(_val, "utf-8"), hashlib.sha256).hexdigest()
+# Endpoint base de Bybit (USDT Perpetual)
+BYBIT_URL = "https://api.bybit.com/v5/order/create"
 
-def send_order(symbol: str, side: str, qty: float, order_type="Market"):
-    """Envía una orden a Bybit"""
-    endpoint = "/v5/order/create"
-    url = BASE_URL + endpoint
+def sign(params, secret):
+    """Genera la firma HMAC-SHA256 para Bybit"""
+    query = "&".join([f"{key}={value}" for key, value in sorted(params.items())])
+    return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+
+def place_order(symbol, side, qty, order_type="Market"):
+    """Crea una orden en Bybit"""
+    timestamp = int(time.time() * 1000)
     params = {
-        "api_key": API_KEY,
-        "timestamp": int(time.time() * 1000),
-        "category": "linear",   # "linear" = USDT Perpetual
+        "apiKey": API_KEY,
         "symbol": symbol,
-        "side": side,           # "Buy" o "Sell"
+        "side": side,  # Buy o Sell
         "orderType": order_type,
-        "qty": str(qty)
+        "qty": str(qty),
+        "timeInForce": "GoodTillCancel",
+        "timestamp": str(timestamp),
+        "recvWindow": "5000",
     }
-    params["sign"] = sign_request(params, API_SECRET)
+    params["sign"] = sign(params, API_SECRET)
 
-    # Depuración: imprime la respuesta de Bybit
-    r = requests.post(url, data=params)
-    print("Respuesta cruda de Bybit:", r.text)
-    return {"raw": r.text}  # no intenta parsear JSON
+    r = requests.post(BYBIT_URL, data=params)
+    return r.status_code, r.json()
 
-# ===== ENDPOINT =====
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    """Recibe alertas de TradingView"""
     try:
-        # Verifica que se reciba JSON
-        if not request.is_json:
-            return jsonify({"error": "No se recibió JSON"}), 400
+        data = request.json
+        print("Alerta recibida:", data)
 
-        data = request.get_json()
-
-        symbol = data.get("symbol")
-        side = data.get("side")
+        symbol = data.get("symbol", "BTCUSDT")
+        side = data.get("side", "Buy")
         qty = data.get("qty", 0.01)
 
-        # Validación mínima
-        if not symbol or not side:
-            return jsonify({"error": "Faltan parámetros (symbol o side)"}), 400
+        status, response = place_order(symbol, side, qty)
 
-        # Envía la orden
-        result = send_order(symbol, side, qty)
-        return jsonify(result)
+        return jsonify({"status": status, "response": response})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Ruta principal para verificar que el servidor está arriba
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return "Bot de TradingView conectado a Bybit Demo ✅"
+    return "Servidor de TradingView-Bybit funcionando 🚀"
 
-# ===== INICIO DE FLASK =====
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
