@@ -66,4 +66,15 @@ def webhook():
         status, response = place_order(symbol, side, qty)
         print("Respuesta final de Bybit:", response)
 
-        return jsonify({"
+        return jsonify({"status": status, "response": response})
+
+    except Exception as e:
+        print("Error en webhook:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/")
+def home():
+    return "Servidor de TradingView-Bybit funcionando 🚀"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
