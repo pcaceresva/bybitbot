@@ -30,17 +30,20 @@ def place_order(symbol, side, qty, order_type="Market"):
     }
     params["sign"] = sign(params, API_SECRET)
     r = requests.post(BYBIT_URL, data=params)
+    print("Bybit status:", r.status_code)
+    print("Bybit raw response:", r.text)
     return r.status_code, r.json()
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
         raw_body = request.data.decode("utf-8").strip()
-        print("Raw body:", raw_body)
+        print("=== NUEVA ALERTA RECIBIDA ===")
+        print("Raw body recibido:", raw_body)
 
         # intenta parsear JSON
         data = request.get_json(force=True, silent=True)
-        print("JSON recibido:", data)
+        print("JSON recibido (puede ser None):", data)
 
         symbol = "BTCUSDT.P"
         qty = 0.01
@@ -50,26 +53,17 @@ def webhook():
             symbol = data.get("symbol", symbol)
             qty = data.get("qty", qty)
         else:
-            # si solo llega texto (ej: "long" o "short")
+            # si solo llega texto plano
             if raw_body.lower() == "long":
                 side = "Buy"
             elif raw_body.lower() == "short":
                 side = "Sell"
             else:
+                print("Formato no reconocido en alerta:", raw_body)
                 return jsonify({"error": f"Formato no reconocido: {raw_body}"}), 400
 
+        print(f"Enviando orden: {side} {qty} {symbol}")
         status, response = place_order(symbol, side, qty)
-        print("Bybit respuesta:", response)
+        print("Respuesta final de Bybit:", response)
 
-        return jsonify({"status": status, "response": response})
-
-    except Exception as e:
-        print("Error en webhook:", str(e))
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/")
-def home():
-    return "Servidor de TradingView-Bybit funcionando 🚀"
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+        return jsonify({"
