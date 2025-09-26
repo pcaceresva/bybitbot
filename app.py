@@ -32,28 +32,34 @@ def place_order(symbol, side, qty, order_type="Market"):
     r = requests.post(BYBIT_URL, data=params)
     print("Bybit status:", r.status_code)
     print("Bybit raw response:", r.text)
-    return r.status_code, r.json()
+    try:
+        return r.status_code, r.json()
+    except Exception:
+        return r.status_code, {"raw": r.text}
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        raw_body = request.data.decode("utf-8").strip()
-        print("=== NUEVA ALERTA RECIBIDA ===")
-        print("Raw body recibido:", raw_body)
+    raw_body = request.data.decode("utf-8").strip()
+    print("=== NUEVA ALERTA RECIBIDA ===")
+    print("Raw body recibido:", raw_body)
 
-        # intenta parsear JSON
+    try:
         data = request.get_json(force=True, silent=True)
         print("JSON recibido (puede ser None):", data)
+    except Exception as e:
+        print("Error parseando JSON:", str(e))
+        data = None
 
-        symbol = "BTCUSDT.P"
-        qty = 0.01
+    symbol = "BTCUSDT.P"
+    qty = 0.01
+    side = "Buy"
 
+    try:
         if data:
             side = data.get("side", "Buy")
             symbol = data.get("symbol", symbol)
             qty = data.get("qty", qty)
         else:
-            # si solo llega texto plano
             if raw_body.lower() == "long":
                 side = "Buy"
             elif raw_body.lower() == "short":
@@ -70,7 +76,8 @@ def webhook():
 
     except Exception as e:
         print("Error en webhook:", str(e))
-        return jsonify({"error": str(e)}), 500
+        # aquí devolvemos el error explícito
+        return f"Error en webhook: {str(e)}", 500
 
 @app.route("/")
 def home():
