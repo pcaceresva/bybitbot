@@ -35,20 +35,28 @@ def place_order(symbol, side, qty, order_type="Market"):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        # 👀 imprime lo que llega
-        print("Raw body:", request.data)
-        print("Headers:", dict(request.headers))
+        raw_body = request.data.decode("utf-8").strip()
+        print("Raw body:", raw_body)
 
         # intenta parsear JSON
         data = request.get_json(force=True, silent=True)
         print("JSON recibido:", data)
 
-        if not data:
-            return jsonify({"error": "No JSON recibido"}), 400
+        symbol = "BTCUSDT.P"
+        qty = 0.01
 
-        symbol = data.get("symbol", "BTCUSDT")
-        side = data.get("side", "Buy")
-        qty = data.get("qty", 0.01)
+        if data:
+            side = data.get("side", "Buy")
+            symbol = data.get("symbol", symbol)
+            qty = data.get("qty", qty)
+        else:
+            # si solo llega texto (ej: "long" o "short")
+            if raw_body.lower() == "long":
+                side = "Buy"
+            elif raw_body.lower() == "short":
+                side = "Sell"
+            else:
+                return jsonify({"error": f"Formato no reconocido: {raw_body}"}), 400
 
         status, response = place_order(symbol, side, qty)
         print("Bybit respuesta:", response)
